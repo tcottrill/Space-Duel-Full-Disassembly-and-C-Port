@@ -1,0 +1,24 @@
+# <frame> in0_set|in0_clear <mask> | in1 <index> <value>
+0 in0_clear 0x10
+0 in0_set 0x2F
+# 0: SELF TEST on at RESET; step/slam/coins idle high
+40 in0_clear 0x20
+# 40: DIAG STEP down
+46 in0_set 0x20
+# 46: DIAG STEP up -> OBJ $04
+80 in0_clear 0x20
+# 80: DIAG STEP down
+86 in0_set 0x20
+# 86: DIAG STEP up -> OBJ $06
+160 in0_clear 0x20
+# 160: DIAG STEP down
+166 in0_set 0x20
+# 166: DIAG STEP up -> OBJ $08
+200 in0_clear 0x20
+# 200: DIAG STEP down
+206 in0_set 0x20
+# 206: DIAG STEP up -> OBJ $0A
+240 in0_clear 0x20
+# 240: DIAG STEP down
+246 in0_set 0x20
+# 246: DIAG STEP up -> OBJ $02

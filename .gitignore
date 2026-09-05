@@ -1,0 +1,42 @@
+# ROM images are not distributed.  Supply your own MAME spacduel set and
+# regenerate everything with disasm/gen_from_roms.py (see disasm/README.md).
+roms/
+disasm/build/
+
+# Atari's source archive (github.com/historicalsource/space-duel) is not
+# distributed either; the listings recovered from it are.  A local copy
+# here lets the tools that read it run again.
+space-duel-main/
+
+# Local material kept beside the repo: hardware diagnostics, the manual,
+# recordings, a vendored cc65.  Not part of the published project.
+local/
+
+# Python
+__pycache__/
+*.pyc
+
+# Local development records, not part of the published project
+c_src/STATUS.md
+c_src/ISSUES.md
+docs/superpowers/
+.claude/
+
+# C port build output
+c_src/obj/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.log
+*.out
+*.log.bak
+
+# The hosts' runtime output.  The window host writes sd_win.ini itself
+# with every key at its default on the first run, so a local copy carries
+# the user's own settings.  Sample wavs are the player's own.
+c_src/*.nv
+c_src/sd_win.ini
+c_src/samples/*.wav
+c_src/samples/*.zip
+c_src/samples/extras/

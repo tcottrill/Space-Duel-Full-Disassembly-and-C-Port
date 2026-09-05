@@ -1,0 +1,54 @@
+# <frame> in0_set|in0_clear <mask> | in1 <index> <value>
+0 in0_set 0x20
+# 0: diag step not pressed
+100 in0_clear 0x10
+100 in0_set 0x08
+# 100: SELF TEST on (slam off) -> bookkeeping
+120 in1 6 0x80
+# 120: SELECT down
+124 in1 6 0x00
+# 124: SELECT up -> option 1
+130 in1 6 0x80
+# 130: SELECT down
+134 in1 6 0x00
+# 134: SELECT up -> option 2
+140 in1 6 0x80
+# 140: SELECT down
+144 in1 6 0x00
+# 144: SELECT up -> option 3
+150 in1 6 0x80
+# 150: SELECT down
+154 in1 6 0x00
+# 154: SELECT up -> option 0
+170 in1 4 0x40
+170 in1 6 0x80
+# 170: START+SELECT, option 0 -> RESET -> diagnostics
+174 in1 4 0x00
+174 in1 6 0x00
+# 174: released
+190 in1 0 0xC0
+# 190: shield+fire shown on the switch line
+200 in1 0 0x00
+220 in0_clear 0x20
+# 220: DIAG STEP down
+226 in0_set 0x20
+# 226: DIAG STEP up -> OBJ $04
+250 in0_clear 0x20
+# 250: DIAG STEP down
+256 in0_set 0x20
+# 256: DIAG STEP up -> OBJ $06
+330 in0_clear 0x20
+# 330: DIAG STEP down
+336 in0_set 0x20
+# 336: DIAG STEP up -> OBJ $08
+360 in0_clear 0x20
+# 360: DIAG STEP down
+366 in0_set 0x20
+# 366: DIAG STEP up -> OBJ $0A
+380 in1 6 0x80
+# 380: SELECT: crosshatch color switch
+390 in1 6 0x00
+410 in0_clear 0x20
+# 410: DIAG STEP down
+416 in0_set 0x20
+# 416: DIAG STEP up -> OBJ $02

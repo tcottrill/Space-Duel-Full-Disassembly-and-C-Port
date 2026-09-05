@@ -1,0 +1,138 @@
+"""gen_lowones_data.py - generate c_src/lowones_data.c from the ROM image.
+
+Extracts the const tables of the AST2RT lowones module from the 64K
+image (disasm/build/spacduel_64k.bin, built by disasm/gen_from_roms.py);
+never hand-transcribed (CONVENTIONS rule 1c).  The tables:
+
+    lowones_atan16[0x10]     ROM $680F  L03: the 4-bit arctangent table of
+                             PartSignedNumberExit, atan16[q] ~
+                             round(atan(q/16) * 256/(2*pi)), q = 0..15.
+    lowones_sin07[0x41]      ROM $6D1B  Sin07: quarter-wave sine table,
+                             sin07[i] ~ round(127*sin(i*pi/128)), i = 0..64.
+    lowones_nibmul[0x100]    ROM $6D5C  nibble product table,
+                             nibmul[(h<<4)|l] = h*l  (OutputTemp2Temp21).
+    lowones_stardest[0x10]   ROM $6E7D  vgram slot addresses (lo,hi words):
+                             4 rock stubs VROCK1-4 ($2290/$229E/$22AC/$22BA)
+                             then 4 top-pic words VROCK5-8 ($22BC-$22C2).
+    lowones_rsourc[0x40]     ROM $6E8D  RSOURC: 4 rows (picture code 0-3) x
+                             8 slots of little-endian AVG JMPL words.
+    lowones_piccode[0x08]    ROM $6EDD  picture codes for L80RandomWave0.
+    lowones_mod_m1[0x13]     ROM $6FB8  Mod, base-1 (LDA $6FB8,X, X=1..18).
+                             [0] = $6FB8 is the RTS opcode ($60) that ends
+                             MoveSaucerPicColor - a CODE byte, kept because
+                             the ROM's base-1 addressing can reach it.
+    lowones_randsel_m1[0x13] ROM $6FCA  TableRandomPictureSelect, base-1
+                             ([0] = Mod's last byte); $80 = cycle MODNUM.
+    lowones_colortab[0x0E]   ROM $7009  ColorTable (6) + Barco2 (8): star
+                             COLOR-word low bytes, indexed across both.
+
+Every extracted byte that appears on a .byte line of the annotated listing
+disasm/spaceduel_program_rom.asm (itself byte-verified against the
+ROM set) is cross-checked; a mismatch aborts. Bytes not on .byte lines
+(the $6FB8 RTS opcode) are reported and taken from the binary as-is.
+
+Run from anywhere:  py c_src/tools/gen_lowones_data.py
+"""
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))   # project root
+CSRC = os.path.normpath(os.path.join(HERE, ".."))
+sys.path.insert(0, os.path.join(ROOT, "disasm"))
+import paths
+
+TABLES = [
+    ("lowones_atan16", 0x680F, 0x10,
+     "L03 ($680F): 4-bit arctangent, ~round(atan(q/16)*256/(2*pi)), q=0..15"),
+    ("lowones_sin07", 0x6D1B, 0x41,
+     "Sin07 ($6D1B): quarter-wave sine, ~round(127*sin(i*pi/128)), i=0..64"),
+    ("lowones_nibmul", 0x6D5C, 0x100,
+     "$6D5C: nibble products, nibmul[(h<<4)|l] = h*l (OutputTemp2Temp21)"),
+    ("lowones_stardest", 0x6E7D, 0x10,
+     "$6E7D: star-stub vgram addresses, lo/hi words - VROCK1-4 then VROCK5-8"),
+    ("lowones_rsourc", 0x6E8D, 0x40,
+     "RSOURC ($6E8D): 4 rows (pic code 0-3) x 8 slots, LE AVG JMPL words"),
+    ("lowones_piccode", 0x6EDD, 0x08,
+     "$6EDD: picture code table for L80RandomWave0"),
+    ("lowones_mod_m1", 0x6FB8, 0x13,
+     "Mod ($6FB9) base-1: LDA $6FB8,X with X=1..18; [0] is a code byte (RTS)"),
+    ("lowones_randsel_m1", 0x6FCA, 0x13,
+     "TableRandomPictureSelect ($6FCB) base-1: $80 = cycle MODNUM"),
+    ("lowones_colortab", 0x7009, 0x0E,
+     "ColorTable ($7009, 6 bytes) + Barco2 ($700F, 8): star COLOR low bytes"),
+]
+
+
+def load_64k():
+    return paths.load_image64k()
+
+
+def listing_bytes():
+    """Parse every 'Lxxxx:  .byte ...' line into {addr: value}."""
+    path = paths.PROGRAM_ROM
+    rx = re.compile(r"^L([0-9A-F]{4}):\s+\.byte\s+(.+?)\s*(?:;.*)?$")
+    out = {}
+    with open(path, "r") as f:
+        for line in f:
+            m = rx.match(line)
+            if not m:
+                continue
+            addr = int(m.group(1), 16)
+            for i, tok in enumerate(m.group(2).split(",")):
+                tok = tok.strip()
+                if tok.startswith("$"):
+                    out[addr + i] = int(tok[1:], 16)
+    return out
+
+
+def cross_check(img, lst):
+    total = 0
+    misses = []
+    for name, base, size, _ in TABLES:
+        for a in range(base, base + size):
+            if a not in lst:
+                misses.append((name, a))   # code byte reached by base-1 idiom
+                continue
+            if lst[a] != img[a]:
+                raise SystemExit("%s: $%04X listing=$%02X bin=$%02X"
+                                 % (name, a, lst[a], img[a]))
+            total += 1
+    for name, a in misses:
+        print("note: %s $%04X not a .byte line (code byte $%02X taken "
+              "from binary)" % (name, a, img[a]))
+    print("cross-check vs listing .byte lines: %d bytes match, %d code bytes"
+          % (total, len(misses)))
+
+
+def emit(img):
+    lines = [
+        "/* lowones_data.c - Space Duel AST2RT lowones const tables",
+        " * ($6D1B-$6E5B math pack, $6E7D-$6EE4 star tables, $6FB8-$7016).",
+        " * generated by c_src/tools/gen_lowones_data.py from the 64K image",
+        " * (disasm/build/spacduel_64k.bin), cross-checked byte-for-byte",
+        " * against the listing's .byte lines.",
+        " * Do not edit - regenerate. Declarations live in lowones.h. */",
+        "#include <stdint.h>",
+        "",
+    ]
+    for name, base, size, desc in TABLES:
+        lines.append("/* %s */" % desc)
+        lines.append("const uint8_t %s[0x%02X] = {" % (name, size))
+        for off in range(0, size, 16):
+            row = ",".join("0x%02X" % b
+                           for b in img[base + off:base + min(size, off + 16)])
+            lines.append("    /* %04X */ %s," % (base + off, row))
+        lines.append("};")
+        lines.append("")
+    with open(os.path.join(CSRC, "lowones_data.c"), "w", newline="\n") as f:
+        f.write("\n".join(lines))
+    print("wrote lowones_data.c (%s)" %
+          ", ".join("%s[%d] @ $%04X" % (n, s, b) for n, b, s, _ in TABLES))
+
+
+if __name__ == "__main__":
+    img = load_64k()
+    cross_check(img, listing_bytes())
+    emit(img)

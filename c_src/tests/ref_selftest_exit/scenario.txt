@@ -1,0 +1,7 @@
+# <frame> in0_set|in0_clear <mask> | in1 <index> <value>
+0 in0_set 0x20
+60 in0_clear 0x10
+60 in0_set 0x08
+# 60: SELF TEST on -> bookkeeping
+120 in0_set 0x10
+# 120: SELF TEST off -> Pwron

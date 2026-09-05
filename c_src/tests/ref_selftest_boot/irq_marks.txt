@@ -1,0 +1,8 @@
+# mainline IRQ sync points: <point> <frame> <irq_count>
+# point 0 = PC $40FB
+# point 1 = PC $4113
+# point 2 = PC $40E5
+# point 3 = PC $40D7
+# point 4 = PC $8C24
+# point 5 = PC $803F
+5 0 0
