@@ -4,7 +4,7 @@
  * The star service rotates/recolors the eight persistent picture stubs in
  * vector RAM (VROCK1-8 at $2290-$22C3, SAU11-13 at $22C4-$22CF) that the
  * per-frame display lists JSRL into: it clobbers the VG list pointer
- * BLUE/EAC2 ($01/$02), pointing it at each stub, exactly as the ROM does
+ * VGLIST/EAC2 ($01/$02), pointing it at each stub, exactly as the ROM does
  * (the mainline rebuilds the pointer afterwards).
  *
  * The math pack is the sin/cos + multiply kernel everything downstream
@@ -66,16 +66,16 @@ uint8_t cos_sin_pi2(uint8_t a)
     return pi_angle0((uint8_t)(a + 0x40));   /* CLC / ADC #$40 */
 }
 
-/* OutputTemp2Temp21 ($686D): 8x8 multiply, A signed x WHITE ($07)
+/* OutputTemp2Temp21 ($686D): 8x8 multiply, A signed x TEMP1 ($07)
  * UNsigned, through the 256-byte nibble-product table at $6D5C.
- * In:  A = signed multiplicand, WHITE = unsigned multiplier.
+ * In:  A = signed multiplicand, TEMP1 = unsigned multiplier.
  * Out: A = POTGO ($0B) = high byte of the signed 16-bit product
- *      (i.e. A * WHITE / 256); POKRAN ($0A) = product low byte.
- * RAM: TEMP1 ($10) clobbered (holds A, then the cross-term sum >> 4);
- *      POKRAN/POTGO hold intermediate nibble products before the final
- *      bytes. WHITE preserved. X/Y clobbered in the ROM.
+ *      (i.e. A * TEMP1 / 256); TEMP2 ($0A) = product low byte.
+ * RAM: TEMP4 ($10) clobbered (holds A, then the cross-term sum >> 4);
+ *      TEMP2/POTGO hold intermediate nibble products before the final
+ *      bytes. TEMP1 preserved. X/Y clobbered in the ROM.
  * The entry sign flag is saved (TAX/PHP) and, restored at the end, selects
- * the signed fixup high -= WHITE (A treated as A-256 when negative).
+ * the signed fixup high -= TEMP1 (A treated as A-256 when negative).
  * L_90_68C7 ($68C7) is the shared store-and-return tail (no outside
  * callers - folded into the function). */
 uint8_t output_temp2_temp21(uint8_t a)
@@ -84,42 +84,42 @@ uint8_t output_temp2_temp21(uint8_t a)
     uint8_t x, y;
     int n_in = (a & 0x80) != 0;         /* L686E PHP: N flag of entry A */
 
-    TEMP1 = a;                          /* L686F STA TEMP1              */
-    /* index (WHITE & $F0) | (A >> 4): LSR x4, EOR/AND #$0F/EOR merge   */
-    x = (uint8_t)((((a >> 4) ^ WHITE) & 0x0F) ^ WHITE);
+    TEMP4 = a;                          /* L686F STA TEMP4              */
+    /* index (TEMP1 & $F0) | (A >> 4): LSR x4, EOR/AND #$0F/EOR merge   */
+    x = (uint8_t)((((a >> 4) ^ TEMP1) & 0x0F) ^ TEMP1);
     POTGO = lowones_nibmul[x];          /* L687F: Ahi * Whi             */
-    /* index ((A & $0F) << 4) | (WHITE & $0F): ASL x4, EOR/AND #$F0/EOR */
-    x = (uint8_t)(((uint8_t)((uint8_t)(TEMP1 << 4) ^ WHITE) & 0xF0) ^ WHITE);
-    POKRAN = lowones_nibmul[x];         /* L6891: Alo * Wlo             */
-    /* index (WHITE & $F0) | (A & $0F) -> Whi * Alo (Y register)        */
-    y = (uint8_t)(((TEMP1 ^ WHITE) & 0x0F) ^ WHITE);
-    /* index ((A & $F0)) | (WHITE & $0F) -> Ahi * Wlo                   */
-    x = (uint8_t)(((TEMP1 ^ WHITE) & 0xF0) ^ WHITE);
+    /* index ((A & $0F) << 4) | (TEMP1 & $0F): ASL x4, EOR/AND #$F0/EOR */
+    x = (uint8_t)(((uint8_t)((uint8_t)(TEMP4 << 4) ^ TEMP1) & 0xF0) ^ TEMP1);
+    TEMP2 = lowones_nibmul[x];         /* L6891: Alo * Wlo             */
+    /* index (TEMP1 & $F0) | (A & $0F) -> Whi * Alo (Y register)        */
+    y = (uint8_t)(((TEMP4 ^ TEMP1) & 0x0F) ^ TEMP1);
+    /* index ((A & $F0)) | (TEMP1 & $0F) -> Ahi * Wlo                   */
+    x = (uint8_t)(((TEMP4 ^ TEMP1) & 0xF0) ^ TEMP1);
     /* cross-term sum, 9 bits (ADC carry recovered by the ROR at $68AD) */
     s = (unsigned)lowones_nibmul[x] + (unsigned)lowones_nibmul[y];
     x = (uint8_t)s;                     /* L68AC TAX (low 8 bits)       */
-    TEMP1 = (uint8_t)(s >> 4);          /* ROR/LSR/LSR/LSR -> STA TEMP1 */
+    TEMP4 = (uint8_t)(s >> 4);          /* ROR/LSR/LSR/LSR -> STA TEMP4 */
     /* low byte: (cross & $0F) << 4 + Alo*Wlo, carry into the high byte */
-    s = (unsigned)((uint8_t)(x << 4)) + (unsigned)POKRAN;
-    POKRAN = (uint8_t)s;                /* L68BB: product low byte      */
-    a = (uint8_t)(POTGO + TEMP1 + (uint8_t)(s >> 8));
+    s = (unsigned)((uint8_t)(x << 4)) + (unsigned)TEMP2;
+    TEMP2 = (uint8_t)s;                /* L68BB: product low byte      */
+    a = (uint8_t)(POTGO + TEMP4 + (uint8_t)(s >> 8));
     if (n_in)                           /* L68C1 PLP / BPL L_90_68C7    */
-        a = (uint8_t)(a - WHITE);       /* SEC / SBC WHITE: sign fixup  */
+        a = (uint8_t)(a - TEMP1);       /* SEC / SBC TEMP1: sign fixup  */
     POTGO = a;                          /* L_90_68C7: STA POTGO         */
     return a;
 }
 
-/* SignedBySignedMult ($6853): A signed x WHITE signed -> high byte.
- * In:  A, WHITE both signed. Out: as OutputTemp2Temp21.
- * Side effect kept from the ROM: when WHITE is negative it is REWRITTEN
- * as |WHITE| (clamped $80 -> $7F), and A is negated (clamped -128 -> $7F)
+/* SignedBySignedMult ($6853): A signed x TEMP1 signed -> high byte.
+ * In:  A, TEMP1 both signed. Out: as OutputTemp2Temp21.
+ * Side effect kept from the ROM: when TEMP1 is negative it is REWRITTEN
+ * as |TEMP1| (clamped $80 -> $7F), and A is negated (clamped -128 -> $7F)
  * before the unsigned-multiplier core runs. */
 uint8_t signed_by_signed_mult(uint8_t a)
 {
-    if (WHITE & 0x80) {                 /* L6853 BIT WHITE / BPL       */
-        uint8_t w = comp(WHITE);
+    if (TEMP1 & 0x80) {                 /* L6853 BIT TEMP1 / BPL       */
+        uint8_t w = comp(TEMP1);
         if (w & 0x80) w = 0x7F;         /* L685D BPL / LDA #$7F        */
-        WHITE = w;                      /* L6861 STA WHITE             */
+        TEMP1 = w;                      /* L6861 STA TEMP1             */
         a = comp(a);
         if (a == 0x80) a = 0x7F;        /* L6867 CMP #$80 / BNE        */
     }
@@ -136,15 +136,15 @@ uint8_t signed_by_signed_mult(uint8_t a)
 
 /* Temp21DivisorUnsigned ($681F): the 4-bit restoring divide the arctangent
  * runs on.  A = dividend, POTGO ($0B) = divisor, entry CARRY matters (it
- * is rolled into POKRAN by the first iteration).  Out: A = POKRAN's four
+ * is rolled into TEMP2 by the first iteration).  Out: A = TEMP2's four
  * quotient bits shifted up one, so the caller's AND #$0F recovers them.
  *
- * POKRAN ($0A) is the quotient register and the ROM never clears it: each
- * `ROL POKRAN` shifts POKRAN's old bit 7 out through the carry and into
+ * TEMP2 ($0A) is the quotient register and the ROM never clears it: each
+ * `ROL TEMP2` shifts TEMP2's old bit 7 out through the carry and into
  * the dividend's low bit, so the effective dividend is
- * (A << 4) | (old POKRAN >> 4) - the divide's low-order noise really is
- * the previous contents of POKRAN.  That is reproduced, not smoothed
- * over, and POKRAN's shifted value is left in RAM exactly as the ROM
+ * (A << 4) | (old TEMP2 >> 4) - the divide's low-order noise really is
+ * the previous contents of TEMP2.  That is reproduced, not smoothed
+ * over, and TEMP2's shifted value is left in RAM exactly as the ROM
  * leaves it (the oracle diffs it).  Divi20 ($6821) / Divi20_20 ($682A)
  * are this loop's local labels. */
 static uint8_t temp21_divisor_unsigned(uint8_t a, int c)
@@ -153,8 +153,8 @@ static uint8_t temp21_divisor_unsigned(uint8_t a, int c)
     int nc;
 
     for (y = 0x04; y != 0; y--) {       /* L681F LDY #$04 / Divi20     */
-        nc = (POKRAN >> 7) & 1;         /* L6821 ROL POKRAN            */
-        POKRAN = (uint8_t)((POKRAN << 1) | (c & 1));
+        nc = (TEMP2 >> 7) & 1;         /* L6821 ROL TEMP2            */
+        TEMP2 = (uint8_t)((TEMP2 << 1) | (c & 1));
         c = nc;
         nc = (a >> 7) & 1;              /* L6823 ROL (A)               */
         a = (uint8_t)((a << 1) | (c & 1));
@@ -163,8 +163,8 @@ static uint8_t temp21_divisor_unsigned(uint8_t a, int c)
         if (c)                          /* L6826 BCC Divi20_20         */
             a = (uint8_t)(a - POTGO);   /* L6828 SBC: leaves C set     */
     }                                   /* L682A DEY / BNE Divi20      */
-    /* L682D LDA POKRAN / L682F ROL: shift in the last quotient bit. */
-    return (uint8_t)((POKRAN << 1) | (c & 1));
+    /* L682D LDA TEMP2 / L682F ROL: shift in the last quotient bit. */
+    return (uint8_t)((TEMP2 << 1) | (c & 1));
 }
 
 /* L4BitDivide ($6805): divide, keep 4 bits, look the angle up.
@@ -180,7 +180,7 @@ static uint8_t l4_bit_divide(uint8_t a, int c)
 /* Divisor2 ($67EB): arctangent of two NON-NEGATIVE values, folded into
  * the first 45-degree octant.  In: A = |x| (denominator), y = |y|
  * (numerator).  Out: A = angle $00-$40 (0-90 degrees).
- * RAM: POTGO ($0B) = the divisor, POKRAN ($0A) as above.
+ * RAM: POTGO ($0B) = the divisor, TEMP2 ($0A) as above.
  * Divisor2_10 ($6802) is the y == x case: exactly 45 degrees ($20). */
 static uint8_t divisor2(uint8_t a, uint8_t y)
 {
@@ -223,13 +223,13 @@ static uint8_t divisor(uint8_t a, uint8_t x)
  *   out  A = atan2(y, x) as an ANGLE, 256 units per full circle, the same
  *        units PiAngle0/CosSinPi2 take ($40 = 90 degrees, CCW from +X).
  *   clobbers X and Y (l4_bit_divide's TAX, divisor's TAY); writes POTGO
- *        ($0B) and POKRAN ($0A).
+ *        ($0B) and TEMP2 ($0A).
  * Call sites, all three agreeing on that protocol:
  *   $48B9 CollisionBounce_80 - LDX XINC,Y / LDA YINC,Y / TAY / JSR, then
- *         LDX TEMP2 / LDY FOURPI to restore its own registers;
+ *         LDX TEMP5 / LDY FOURPI to restore its own registers;
  *   $4931 NumeratorAtan     - TAY (the Y difference) / PLA / TAX (the X
  *         difference) / JMP: a tail call, so A is the caller's result;
- *   $4C26 Efire3            - TAY / PLA / TAX / JSR, then LDX XCOMP /
+ *   $4C26 Efire3            - TAY / PLA / TAX / JSR, then LDX TEMP3 /
  *         STA ANGLE,X.
  * Sign folding, in the ROM's own words: arctan(y/x) = -arctan(-y/x) for
  * y < 0, = $80 - arctan(y/-x) for x < 0, = $40 - arctan(x/y) for y > x.
@@ -252,34 +252,34 @@ uint8_t part_signed_number_exit(uint8_t x, uint8_t y)
 
 /* SaveLater ($7017): stash the star loop index for the star-stub loops.
  * In:  X = star index 0-3.
- * Out: POKRAN ($0A) = X saved; XCOMP ($0C) = X*2 (word offset into the
+ * Out: TEMP2 ($0A) = X saved; TEMP3 ($0C) = X*2 (word offset into the
  *      RSOURC/dest tables); returns Y (= A = X*2). */
 uint8_t save_later(uint8_t x)
 {
     uint8_t a;
-    POKRAN = x;                         /* L7017 STX POKRAN            */
+    TEMP2 = x;                         /* L7017 STX TEMP2            */
     a = (uint8_t)(x << 1);              /* TXA / ASL                   */
-    XCOMP = a;                          /* L701B STA XCOMP             */
+    TEMP3 = a;                          /* L701B STA TEMP3             */
     return a;                           /* TAY                         */
 }
 
 /* GetRotationColorCode ($701F): copy one star picture's 2-byte AVG JMPL
  * word from RSOURC ($6E8D) into the star's vgram stub.
  * In:  X = rotation counter index 0-3 (ASTERS..ASTERS+3, $3D6-$3D9);
- *      XCOMP = slot offset (star*2, +8 for the top pictures);
- *      BLUE/EAC2 ($01/$02) -> destination stub in vector RAM.
+ *      TEMP3 = slot offset (star*2, +8 for the top pictures);
+ *      VGLIST/EAC2 ($01/$02) -> destination stub in vector RAM.
  * Out: returns Y = 2 (list offset past the word; the caller keeps
- *      writing at (BLUE),Y from there). A/X clobbered.
+ *      writing at (VGLIST),Y from there). A/X clobbered.
  * GetRotationColorCode_11 ($702B) is a local label (no outside refs). */
 uint8_t get_rotation_color_code(uint8_t x)
 {
     uint8_t a, y;
     /* code = (ASTERS,X & 3) << 4: 2 words/pic x 8 slots per code row */
     a = (uint8_t)((g.ram[A_ASTERS + x] & 0x03) << 4);  /* L701F-L7027 */
-    a = (uint8_t)(a + XCOMP);           /* L7028 CLC / ADC XCOMP       */
+    a = (uint8_t)(a + TEMP3);           /* L7028 CLC / ADC TEMP3       */
     x = a;                              /* GetRotationColorCode_11 TAX */
     y = 0;                              /* L702C LDY #$00              */
-    vg_poke_list(y, lowones_rsourc[x]); /* LSB: STA (BLUE),Y           */
+    vg_poke_list(y, lowones_rsourc[x]); /* LSB: STA (VGLIST),Y           */
     y++; x++;
     vg_poke_list(y, lowones_rsourc[x]); /* MSB                         */
     y++;
@@ -310,21 +310,21 @@ void move_saucer_pic_color(void)
 /* Toppic ($6F6E): recopy the four "top" single-word picture stubs
  * (VROCK5-8, $22BC-$22C2) from the RSOURC rows, using only the slow
  * rotation counters ($3D8/$3D9). Falls into MoveSaucerPicColor.
- * No inputs; clobbers A/X/Y, POKRAN, XCOMP, BLUE/EAC2. */
+ * No inputs; clobbers A/X/Y, TEMP2, TEMP3, VGLIST/EAC2. */
 void toppic(void)
 {
     uint8_t a, x, y;
     x = 3;                              /* L6F6E LDX #$03              */
     for (;;) {                          /* Toppic_10                   */
-        y = save_later(x);              /* POKRAN=x, XCOMP=y=x*2       */
-        BLUE = lowones_stardest[8 + y]; /* L6F73 LDA $6E85,Y ($6E7D+8) */
+        y = save_later(x);              /* TEMP2=x, TEMP3=y=x*2       */
+        VGLIST = lowones_stardest[8 + y]; /* L6F73 LDA $6E85,Y ($6E7D+8) */
         EAC2 = lowones_stardest[9 + y]; /* where to build picture      */
-        /* adjust XCOMP to point at the top-4 slot words               */
-        XCOMP = (uint8_t)(0x08 + XCOMP);/* L6F7D-L6F82 CLC ADC         */
+        /* adjust TEMP3 to point at the top-4 slot words               */
+        TEMP3 = (uint8_t)(0x08 + TEMP3);/* L6F7D-L6F82 CLC ADC         */
         a = (uint8_t)(x & 0x01);        /* L6F84 TXA / AND #$01        */
         x = (uint8_t)(a + 2);           /* TAX/INX/INX: slow rotations */
         (void)get_rotation_color_code(x);
-        x = POKRAN;                     /* L6F8D restore star index    */
+        x = TEMP2;                     /* L6F8D restore star index    */
         if (x == 0) break;              /* DEX / BPL Toppic_10         */
         x--;
     }
@@ -333,7 +333,7 @@ void toppic(void)
 
 /* DoLowOnesEvery ($6EE5): the per-frame star-picture service, called at
  * the top of every mainline frame ($4024). No inputs; clobbers A/X/Y,
- * POKRAN, POTGO, XCOMP, BLUE/EAC2 (the VG list pointer!), and the star
+ * TEMP2, POTGO, TEMP3, VGLIST/EAC2 (the VG list pointer!), and the star
  * state cells $3D6-$3DD. Falls into Toppic -> MoveSaucerPicColor.
  *
  * Star state (ASTERS = $3D6):
@@ -390,11 +390,11 @@ void do_low_ones_every(void)
     /* DoLowOnesEvery_8: rotate and recopy all 4 rock stubs */
     x = 3;                              /* L6F29 LDX #$03              */
     for (;;) {                          /* DoLowOnesEvery_10           */
-        y = save_later(x);              /* POKRAN=x, XCOMP=y=x*2       */
-        BLUE = lowones_stardest[y];     /* L6F2E: stub LSB ($6E7D,Y)   */
+        y = save_later(x);              /* TEMP2=x, TEMP3=y=x*2       */
+        VGLIST = lowones_stardest[y];     /* L6F2E: stub LSB ($6E7D,Y)   */
         EAC2 = lowones_stardest[y + 1]; /* MSB                         */
         y = get_rotation_color_code(x); /* JMPL word written; y = 2    */
-        x = POKRAN;                     /* L6F3B recall X              */
+        x = TEMP2;                     /* L6F3B recall X              */
         POTGO = 0x02;                   /* L6F3D-L6F3F: 3 color words  */
         a = (uint8_t)(g.ram[0x3DA + x] & 0x03);   /* color code        */
         if (x < 3) {                    /* L6F46 CPX #$03 / BCS _20    */
@@ -414,7 +414,7 @@ void do_low_ones_every(void)
                 POTGO--;                /* L6F65 DEC POTGO             */
             } while (!(POTGO & 0x80));  /* BPL _15                     */
         }
-        x = POKRAN;                     /* DoLowOnesEvery_20 restore X */
+        x = TEMP2;                     /* DoLowOnesEvery_20 restore X */
         if (x == 0) break;              /* DEX / BPL _10               */
         x--;
     }
@@ -424,7 +424,7 @@ void do_low_ones_every(void)
 
 /* L80RandomWave0 ($6FDD): pick the picture code for a newly spawned rock
  * for the current WAVE ($3AF, clamped to 18).
- * In:  X, Y = caller registers (STASHED to $17 and NOBJ ($15) - real RAM
+ * In:  X, Y = caller registers (STASHED to $17 and TEMP7 ($15) - real RAM
  *      stores the oracle diff sees - then restored, so the C caller keeps
  *      its own copies); WAVE, MODNUM ($3F8).
  * Out: A = picture code from the $6EDD table; MODNUM cycled down (with
@@ -438,7 +438,7 @@ uint8_t l80_random_wave0(uint8_t x, uint8_t y)
 {
     uint8_t a;
     g.ram[0x17] = x;                    /* L6FDD STX $17 (scratch save) */
-    NOBJ = y;                           /* L6FDF STY NOBJ              */
+    TEMP7 = y;                           /* L6FDF STY TEMP7              */
     x = WAVE;                           /* L6FE1 LDX WAVE              */
     if (x >= 0x12)                      /* L6FE4 CPX #$12 / BCC        */
         x = 0x12;
@@ -450,6 +450,6 @@ uint8_t l80_random_wave0(uint8_t x, uint8_t y)
         a = MODNUM;                     /* L6FFD LDA MODNUM            */
     }
     a = lowones_piccode[a];             /* L7000 TAX / LDA $6EDD,X     */
-    /* L7004/L7006: LDX $17 / LDY NOBJ - X,Y restored for the caller   */
+    /* L7004/L7006: LDX $17 / LDY TEMP7 - X,Y restored for the caller   */
     return a;                           /* L7008 RTS                   */
 }

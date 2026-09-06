@@ -2,7 +2,7 @@
 import sys, os, re
 sys.path.insert(0, os.path.dirname(__file__))
 import paths
-import rammap, emit as emitmod
+import rammap, emit as emitmod, var_docs
 
 HARDWARE = [
     ("Memory map", [
@@ -44,10 +44,21 @@ def emit(path=None):
         ";Names in the 'Hardware' sections are descriptive; the RAM variable names",
         ";below are Atari's own identifiers, recovered from the .BLKB declarations",
         ";in ASTRD2.MAC and the equates in AS2DEC.MAC (Atari's source archive).",
-        ";Note DEC MACRO-65 symbols are significant to 6 characters only.",
+        ";Note DEC MACRO-65 symbols are significant to 6 characters only, so a few",
+        ";arrive truncated: CMSBSE is CMSBSET, PL0ARE is PL0AREA.",
+        ";",
+        ";Descriptions come from Atari's own comments on those declarations, plus",
+        ";the sound channel arrays in AS2POK.MAC and the coin variables shared with",
+        ";COIN65.MAC; see var_docs.py, which is where they are edited.",
+        ";",
+        ";An address is named after whichever symbol resolves to it, and Atari's",
+        ";sources define constants whose value happens to equal a low RAM address.",
+        ";Where such a constant outranks the variable that really lives there, the",
+        ";comment opens with the cell's true identity, as in 'VGLIST+1 - ...'.",
         "",
     ]
     reserved = {n for _t, rws in HARDWARE for n, _a, _c in rws}
+    emitted = []                                # (name, documented) per RAM alias
     for title, rows in HARDWARE:
         out.append(";%s" % ("-" * 34) + "[ %s ]" % title + "-" * 34)
         for name, addr, note in rows:
@@ -72,12 +83,19 @@ def emit(path=None):
         out.append(";%s" % ("-" * 34) + "[ %s ]" % title + "-" * 34)
         for a, n in rows:
             w = 2 if a < 0x100 else 4
-            out.append(".alias %-16s $%0*X" % (n, w, a))
+            text, _collides = var_docs.lookup(n, a)
+            emitted.append((n, bool(text)))
+            line = ".alias %-16s $%0*X" % (n, w, a)
+            if text:
+                line = "%-32s ;%s" % (line, text)
+            out.append(line)
         out.append("")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     open(path, "w").write("\n".join(out) + "\n")
-    return sum(1 for l in out if l.startswith(".alias"))
+    n = sum(1 for l in out if l.startswith(".alias"))
+    return n, sum(1 for _nm, ok in emitted if ok), len(emitted)
 
 if __name__ == "__main__":
-    n = emit()
-    print("wrote %s  (%d aliases)" % (os.path.relpath(paths.DEFINES, paths.ROOT), n))
+    n, have, total = emit()
+    print("wrote %s  (%d aliases, %d of %d RAM/vector names documented)"
+          % (os.path.relpath(paths.DEFINES, paths.ROOT), n, have, total))

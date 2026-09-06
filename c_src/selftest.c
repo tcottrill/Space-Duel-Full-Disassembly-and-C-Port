@@ -97,18 +97,18 @@ void beginning_pattern(void)
 
     for (p = 0x11; p < 0x100; p <<= 1) {        /* L8136 ASL / BCS Stop0 */
         for (y = 0; y < 0x100; y++) {
-            g.ram[y] = (uint8_t)p;              /* L8114 STX BLACK / L813D STX BLACK,Y */
+            g.ram[y] = (uint8_t)p;              /* L8114 STX VGBRIT / L813D STX VGBRIT,Y */
             /* L811A-L8121: scan forward, reads only (cannot fail here)  */
-            /* L8129 EOR BLACK,Y: verify (cannot fail here)              */
+            /* L8129 EOR VGBRIT,Y: verify (cannot fail here)              */
             /* L8125 STA WTCHDG: watchdog kick dropped                    */
-            g.ram[y] = 0x00;                    /* L8131 STX BLACK,Y: clear */
+            g.ram[y] = 0x00;                    /* L8131 STX VGBRIT,Y: clear */
         }
     }
     stop0();
 }
 
 /* Stop0 ($8186) / L04 ($8191): zero the zero page, then the full march over
- * pages $01-$03 and $20-$27 through the (BLACK),Y pointer (BLUE = page):
+ * pages $01-$03 and $20-$27 through the (VGBRIT),Y pointer (VGLIST = page):
  * every cell must read 0, then takes $11, $22, $44, $88 in turn and is LEFT
  * at $88 - so vector RAM comes out of the march all $88. Pages 1-3 are
  * cleared again by EorCksumRoms; vector RAM is not. */
@@ -117,23 +117,23 @@ static void stop0(void)
     unsigned x, y, p, page;
 
     /* L8186 LDX #$FF / TXS: the stack is reset - CPU artifact             */
-    for (x = 0; x < 0x100; x++) g.ram[x] = 0x00;    /* Stop0_10 STA BLACK,X  */
-    /* L04: TAY (Y = 0), LDA #$01, STA BLUE: start at page 1 (BLACK = 0)   */
+    for (x = 0; x < 0x100; x++) g.ram[x] = 0x00;    /* Stop0_10 STA VGBRIT,X  */
+    /* L04: TAY (Y = 0), LDA #$01, STA VGLIST: start at page 1 (VGBRIT = 0)   */
     for (page = 0x01; page < 0x28; page++) {
         if (page == 0x04) page = 0x20;          /* L81B6: next @ $2000        */
-        BLUE = (uint8_t)page;                   /* L8194 STA BLUE / L81AE INC */
+        VGLIST = (uint8_t)page;                   /* L8194 STA VGLIST / L81AE INC */
         for (y = 0; y < 0x100; y++) {
             uint8_t* cell = (page < 0x04)
                 ? &g.ram[(page << 8) | y]
                 : &g.vram[((page - 0x20) << 8) | y];
-            /* L8198 LDA (BLACK),Y / BNE L04_20: a non-zero cell is an
+            /* L8198 LDA (VGBRIT),Y / BNE L04_20: a non-zero cell is an
              * error - unreachable here, the reset loop cleared it       */
             for (p = 0x11; p < 0x100; p <<= 1)  /* L819D .. L81A6 BCC L04_16 */
-                *cell = (uint8_t)p;             /* STA / EOR (BLACK),Y verify */
+                *cell = (uint8_t)p;             /* STA / EOR (VGBRIT),Y verify */
         }
         /* L81AB STA WTCHDG: watchdog kick dropped                         */
     }
-    BLUE = 0x28;                                /* the INC BLUE that fails
+    VGLIST = 0x28;                                /* the INC VGLIST that fails
                                                  * CPX #$28 leaves $28      */
     eor_cksum_roms();                           /* L81C0 JMP: RAM is good   */
 }
@@ -143,7 +143,7 @@ static void stop0(void)
  * results in $F1-$F6; then, as the special case, the 8 pages at $2800
  * seeded with X = $FF, stored through the zero-page wrap of STA $F1,X into
  * $F0 (BGSHEN, AS2TST's PNTTBL). Atari built each ROM so the seeded EOR is
- * 0. The pointer is WHITE/EACE ($07/$08). */
+ * 0. The pointer is TEMP1/EACE ($07/$08). */
 static void eor_cksum_roms(void)
 {
     unsigned x, y, npages;
@@ -155,21 +155,21 @@ static void eor_cksum_roms(void)
         g.ram[0x300 + x] = 0x00;
     }
     /* L8253 TAY: Y = 0 */
-    WHITE = 0x00;                               /* pointer lo               */
+    TEMP1 = 0x00;                               /* pointer lo               */
     EACE  = 0x30;                               /* pointer hi: $2800 is the
                                                  * special case, done last */
     x = 0;
     npages = 0x10;
     for (;;) {
-        POKRAN = (uint8_t)npages;               /* EorCksumRoms_6: # pages  */
+        TEMP2 = (uint8_t)npages;               /* EorCksumRoms_6: # pages  */
         a = (uint8_t)x;                         /* L825E TXA: the seed      */
         do {
-            for (y = 0; y < 0x100; y++)         /* L825F EOR (WHITE),Y      */
+            for (y = 0; y < 0x100; y++)         /* L825F EOR (TEMP1),Y      */
                 a ^= rom_byte((uint16_t)(((uint16_t)EACE << 8) | y));
             EACE++;                             /* L8264 INC EACE           */
             /* L8266 STA WTCHDG: watchdog kick dropped                     */
-            POKRAN--;                           /* L8269 DEC POKRAN         */
-        } while (POKRAN != 0);
+            TEMP2--;                           /* L8269 DEC TEMP2         */
+        } while (TEMP2 != 0);
         g.ram[(0xF1 + x) & 0xFF] = a;           /* L826D STA $F1,X (zp wrap)*/
         x = (x + 1) & 0xFF;                     /* INX                      */
         if (x == 0) break;                      /* BEQ JustLabel: was $2800 */
@@ -224,7 +224,7 @@ static void stest4(void)
         y = 0x00;
         g.ram[0x187] = 0x00;                    /* L82CA STY $0187          */
     }
-    OBJ = y;                                    /* which state first?       */
+    (g.ram[0x00A0]) = y;                                    /* which state first?       */
     cpu_loop = SD_LOOP_DIAG;                    /* L82CF JMP MainLineDiagLoop */
 }
 
@@ -235,7 +235,7 @@ static void stest4(void)
 static void optn2(uint8_t a_strobe);
 static void swtst(void);
 
-/* Stest5 ($82D2), OBJ = 0 (the EAROM-was-bad state): once the EAROM driver
+/* Stest5 ($82D2), $00A0 = 0 (the EAROM-was-bad state): once the EAROM driver
  * is idle, read it again, report the result in ERPLC+3 and go straight to
  * the report screen. */
 static void stest5(void)
@@ -244,10 +244,10 @@ static void stest5(void)
         return;                                 /* BNE -> RTS at $82E6      */
     read_everything();                          /* try another read         */
     ZP_ERPLC3 = g.ram[0x187];                   /* still bad? (report)      */
-    OBJ = 0x02;                                 /* go straight to report    */
+    (g.ram[0x00A0]) = 0x02;                                 /* go straight to report    */
 }
 
-/* Cocktail ($82E7), OBJ = 2: the status screen - option switches in big
+/* Cocktail ($82E7), $00A0 = 2: the status screen - option switches in big
  * digits (Optn2), the non-zero ROM checksums as "ROM# value" lines, the
  * R/P/P/E error letters for bad RAM / POKEY1 / POKEY2 / EAROM, and a beep
  * on any switch closure (Swtst). On a cocktail cabinet the flip is turned
@@ -262,50 +262,50 @@ static void cocktail(void)
     vg_add2(0x61, 0xAF);                        /* L82F6 (JSRL word $AF61)  */
     vg_vctr_dark(0xB0, 0xF0);                   /* L82FD                    */
     use_full_size(0x00);                        /* scale 0: big numbers     */
-    optn2(BLUE);                                /* A = BLUE after AddY1ToVector */
+    optn2(VGLIST);                                /* A = VGLIST after AddY1ToVector */
     set_vg_scale(0x01, 0x01);                   /* L830C; Y = 1 from SaveCFlag */
     POTGO = 0x46;                               /* starting Y, checksum lines */
     for (x = 6;; x--) {                         /* L8315 LDX #$06           */
         a = g.ram[A_BGSHEN + x];                /* PNTTBL $F0,X             */
         if (a != 0) {                           /* BEQ +$2A: skip if clean  */
-            POKRAN = x;                         /* save chksum #            */
+            TEMP2 = x;                         /* save chksum #            */
             center_beam_in_middle();
             ypos = POTGO;                       /* L8320 LDX POTGO          */
             POTGO = (uint8_t)(ypos - 0x08);     /* SEC / SBC: 32 below      */
             vg_vctr_dark(0xF6, ypos);           /* position beam (X = old)  */
-            (void)display_digit(POKRAN);        /* ROM #                    */
+            (void)display_digit(TEMP2);        /* ROM #                    */
             vg_vctr_dark(0x06, 0x00);           /* L8332-6                  */
-            /* LDA POKRAN / CLC / ADC #$F0 / LDY #$01: the checksum's own
+            /* LDA TEMP2 / CLC / ADC #$F0 / LDY #$01: the checksum's own
              * zero-page address, one byte, C = 0 (no carry out of $F0+X) */
-            save_input_parameters((uint8_t)(POKRAN + 0xF0), 0x01, 0);
-            x = POKRAN;                         /* L8343 LDX POKRAN         */
+            save_input_parameters((uint8_t)(TEMP2 + 0xF0), 0x01, 0);
+            x = TEMP2;                         /* L8343 LDX TEMP2         */
         }
         if (x == 0) break;                      /* DEX / BPL                */
     }
     center_beam_in_middle();                    /* L8348                    */
     vg_vctr_dark(0xF6, 0x50);                   /* position for error list  */
-    POKRAN = 0x03;
+    TEMP2 = 0x03;
     for (;;) {                                  /* L8356                    */
-        x = POKRAN;
+        x = TEMP2;
         y = 0x00;
         if (g.ram[A_COCKBI + x] != 0)           /* ERPLC,X: any bad news?   */
             y = selftest_badnws[x];
         vg_add2(sd_vecrom[0x324A + y - 0x2800], /* the letter's JSRL word   */
                 sd_vecrom[0x324B + y - 0x2800]);/* (Y = 0: the blank glyph) */
-        POKRAN--;
-        if (POKRAN & 0x80) break;               /* DEC / BPL                */
+        TEMP2--;
+        if (TEMP2 & 0x80) break;               /* DEC / BPL                */
     }
     swtst();                                    /* beep on switch closure   */
 }
 
-/* Stest7 ($8372), OBJ = 4: one JSRL - the canned test picture at $AA76. */
+/* Stest7 ($8372), $00A0 = 4: one JSRL - the canned test picture at $AA76. */
 static void stest7(void)
 {
     vg_add2(0x76, 0xAA);
 }
 
-/* Stest8 ($8379), OBJ = 6: the sound and scale test. Every 64 frames the
- * channel index XCOMP steps: the previous channel's AUDC is silenced and
+/* Stest8 ($8379), $00A0 = 6: the sound and scale test. Every 64 frames the
+ * channel index TEMP3 steps: the previous channel's AUDC is silenced and
  * the new one gets its Sndfrq tone at $A8, through the "fake" POKEY
  * addresses $13F0,Y (POKEY1 mirror) / $1400,Y (POKEY2). The scale word
  * uses the same index (never 0). */
@@ -314,8 +314,8 @@ static void stest8(void)
     uint8_t x, y, a;
 
     if ((ZP_FRAME & 0x3F) == 0)                 /* L8379-D                  */
-        XCOMP++;                                /* next channel             */
-    x = (uint8_t)(XCOMP & 0x07);
+        TEMP3++;                                /* next channel             */
+    x = (uint8_t)(TEMP3 & 0x07);
     y = SNDSEL_PREV(x);                         /* L8386 LDY $83B8,X        */
     pokey_write_addr((uint16_t)(0x13F1 + y), 0x00); /* previous AUDC off    */
     y = SNDSEL_OFF(x);                          /* L838E LDY SoundTableLo,X */
@@ -323,34 +323,34 @@ static void stest8(void)
     pokey_write_addr((uint16_t)(0x13F1 + y), 0xA8);           /* AUDC       */
     vg_add2(0x79, 0xAA);                        /* L839C                    */
     center_beam_in_middle();
-    a = (uint8_t)(XCOMP & 0x07);
+    a = (uint8_t)(TEMP3 & 0x07);
     if (a == 0) a = 0x01;                       /* don't allow 0            */
     use_full_size(a);                           /* test scale               */
     vg_add2(0x63, 0xA8);                        /* L83B1                    */
 }
 
-/* SetScale1 ($83CA), OBJ = 8: the seven color bars, XCOMP = 6..0, color =
- * ~XCOMP & 7 (so group 0 is white and gets its own picture $AA57). */
+/* SetScale1 ($83CA), $00A0 = 8: the seven color bars, TEMP3 = 6..0, color =
+ * ~TEMP3 & 7 (so group 0 is white and gets its own picture $AA57). */
 static void set_scale1(void)
 {
     uint8_t y;
 
     use_full_size(0x01);                        /* set scale 1              */
-    XCOMP = 0x06;
+    TEMP3 = 0x06;
     for (;;) {                                  /* L83D3                    */
         center_beam_in_middle();
-        y = XCOMP;
+        y = TEMP3;
         vg_vctr_dark(selftest_posbars[y], selftest_position[y]);
-        set_vg_status((uint8_t)(~XCOMP & 0x07)); /* EOR #$FF / AND #$07     */
-        if (XCOMP == 0) vg_add2(0x57, 0xAA);    /* white group              */
+        set_vg_status((uint8_t)(~TEMP3 & 0x07)); /* EOR #$FF / AND #$07     */
+        if (TEMP3 == 0) vg_add2(0x57, 0xAA);    /* white group              */
         else            vg_add2(0x54, 0xAA);
-        XCOMP--;
-        if (XCOMP & 0x80) break;                /* DEC XCOMP / BPL          */
+        TEMP3--;
+        if (TEMP3 & 0x80) break;                /* DEC TEMP3 / BPL          */
     }
     vg_add2(0x66, 0xAA);                        /* LastWhite                */
 }
 
-/* Stst10 ($841F), OBJ = $A: the crosshatch - 8 horizontal and 12 vertical
+/* Stst10 ($841F), $00A0 = $A: the crosshatch - 8 horizontal and 12 vertical
  * bars - and the color switch: SELECT held three frames bumps $17, which
  * MainLineDiagLoop turns into the box color on this screen. */
 static void stst10(void)
@@ -360,36 +360,36 @@ static void stst10(void)
 
     center_beam_in_middle();
     use_full_size(0x01);
-    POKRAN = 0x07;                              /* "nine bars horiz"        */
+    TEMP2 = 0x07;                              /* "nine bars horiz"        */
     center_beam_in_middle();                    /* L842B: once, not per bar */
     for (;;) {                                  /* L842E                    */
-        y = POKRAN;
+        y = TEMP2;
         vg_vctr_dark(0x80, selftest_hlpos[y]);  /* position for this line   */
         vg_add2(0x72, 0xAA);
-        POKRAN--;
-        if (POKRAN & 0x80) break;
+        TEMP2--;
+        if (TEMP2 & 0x80) break;
     }
-    POKRAN = 0x0B;                              /* "thirteen bars vert"     */
+    TEMP2 = 0x0B;                              /* "thirteen bars vert"     */
     for (;;) {                                  /* L8447                    */
-        y = POKRAN;
+        y = TEMP2;
         vg_vctr_dark(selftest_vlpos[y], 0x60);
         vg_add2(0x6E, 0xAA);
-        POKRAN--;
-        if (POKRAN & 0x80) break;
+        TEMP2--;
+        if (TEMP2 & 0x80) break;
     }
     if (sd_hw_in1(6) & 0x80) {                  /* L845C LDA GAMSEL / BPL   */
-        c = (TEMP5 & 0x80) != 0;                /* ASL TEMP5: debounce      */
-        TEMP5 = (uint8_t)(TEMP5 << 1);
+        c = (TEMPA & 0x80) != 0;                /* ASL TEMPA: debounce      */
+        TEMPA = (uint8_t)(TEMPA << 1);
         if (c) ZP_17++;                         /* next color               */
         return;                                 /* JMP $846E                */
     }
-    TEMP5 = 0x20;                               /* reset: not pushed        */
+    TEMPA = 0x20;                               /* reset: not pushed        */
 }
 
 /* CenterBeam ($8483): the coin-mech line - '1' for the left mech, the
  * centre mech's multiplier (ZMINE d4 + 1) and the dollar mech's (ZMINE
  * d3-d2 through DollarMechMultipliers), then falls into Optn2 with
- * XCOMP = $FF. Each $140B strobe is the STA of whatever A held - the list
+ * TEMP3 = $FF. Each $140B strobe is the STA of whatever A held - the list
  * pointer's low byte, which AddY1ToVector leaves in A. */
 static void center_beam(void)
 {
@@ -398,23 +398,23 @@ static void center_beam(void)
     center_beam_in_middle();
     vg_vctr_dark(0xFB, 0x4D);                   /* position beam            */
     (void)display_digit(0x01);                  /* 1 for left coin mech     */
-    sd_hw_pokey_write(1, 0x0B, BLUE);           /* L8492 STA $140B (POTGO)  */
+    sd_hw_pokey_write(1, 0x0B, VGLIST);           /* L8492 STA $140B (POTGO)  */
     a = sd_hw_pokey2_optionsw();                /* L8495 LDA $1408 'OPTN3'  */
     ZMINE = a;
     a = (uint8_t)(((a & 0x10) >> 4) + 1);       /* AND #$10, LSR x4, ADC #1 */
     (void)display_digit(a);                     /* centre mech value        */
-    sd_hw_pokey_write(1, 0x0B, BLUE);           /* L84A5 STA $140B          */
+    sd_hw_pokey_write(1, 0x0B, VGLIST);           /* L84A5 STA $140B          */
     a = sd_hw_pokey2_optionsw();                /* L84A8 LDA $1408          */
     x = (uint8_t)((a & 0x0C) >> 2);
     (void)display_digit(selftest_dollar[x]);    /* dollar mech value        */
     vg_vctr_dark(0xC6, 0xEE);                   /* position for next line   */
-    XCOMP = 0xFF;                               /* flag for position        */
-    optn2(BLUE);                                /* falls through            */
+    TEMP3 = 0xFF;                               /* flag for position        */
+    optn2(VGLIST);                                /* falls through            */
 }
 
 /* Optn2 ($84C1): 16 option-switch digits (POKEY2 $1408 d0..d7, then POKEY1
  * $1008 d0..d7, as the PLA/ROR chain pairs them), then d7/d6 of each IN1
- * line $0907 down to $0900, then IN0 d0..d5, then ten 'X's. XCOMP bit 7
+ * line $0907 down to $0900, then IN0 d0..d5, then ten 'X's. TEMP3 bit 7
  * selects the line spacing (set when entered from CenterBeam). a_strobe is
  * the A the caller arrived with - it is STA'd to the $100B POTGO strobe. */
 static void optn2(uint8_t a_strobe)
@@ -422,9 +422,9 @@ static void optn2(uint8_t a_strobe)
     uint8_t p2, y, v;
     int c;
 
-    POKRAN = 0x0F;
+    TEMP2 = 0x0F;
     sd_hw_pokey_write(0, 0x0B, a_strobe);       /* L84C5 STA $100B: strobe  */
-    POTGO = sd_hw_pokey1_diffsw();              /* L84C8 LDA $1008 'OPTN1'  */
+    POTGO = sd_hw_pokey1_diffsw();              /* L84C8 LDA $1008 'NXTBON'  */
     sd_hw_pokey_write(1, 0x0B, POTGO);          /* L84CD STA $140B          */
     p2 = sd_hw_pokey2_optionsw();               /* L84D0 LDA $1408 'OPTN3'  */
     for (;;) {                                  /* L84D3 PHA                */
@@ -432,40 +432,40 @@ static void optn2(uint8_t a_strobe)
         c = POTGO & 0x01;                       /* L84D9 LSR POTGO          */
         POTGO >>= 1;
         p2 = (uint8_t)((p2 >> 1) | (c << 7));   /* PLA / ROR                */
-        POKRAN--;
-        if (POKRAN & 0x80) break;               /* DEC POKRAN / BPL         */
+        TEMP2--;
+        if (TEMP2 & 0x80) break;               /* DEC TEMP2 / BPL         */
     }
-    y = (XCOMP & 0x80) ? 0x9E : 0x9F;           /* L84E1-7                  */
+    y = (TEMP3 & 0x80) ? 0x9E : 0x9F;           /* L84E1-7                  */
     vg_vctr_dark(y, 0xF8);                      /* position for next line   */
-    POKRAN = 0x07;                              /* do all other switches    */
+    TEMP2 = 0x07;                              /* do all other switches    */
     for (;;) {                                  /* L84F3                    */
-        v = sd_hw_in1(POKRAN);                  /* LDA HYPSW,X              */
+        v = sd_hw_in1(TEMP2);                  /* LDA HYPSW,X              */
         (void)display_digit((uint8_t)(v >> 7));        /* ROL/ROL/AND #1: d7*/
         (void)display_digit((uint8_t)((v >> 6) & 1));  /* PLP/ROL/AND #1: d6*/
-        POKRAN--;
-        if (POKRAN & 0x80) break;
+        TEMP2--;
+        if (TEMP2 & 0x80) break;
     }
-    y = (XCOMP & 0x80) ? 0x9E : 0x9F;           /* L850B-11                 */
+    y = (TEMP3 & 0x80) ? 0x9E : 0x9F;           /* L850B-11                 */
     vg_vctr_dark(y, 0xF8);                      /* position for next line   */
-    POKRAN = 0x05;
+    TEMP2 = 0x05;
     v = (uint8_t)(sd_hw_in0() & 0x3F);          /* remaining switches; d6,
                                                  * d7 don't care            */
     for (;;) {                                  /* L8522 AND #$01 ... ROR   */
         (void)display_digit((uint8_t)(v & 0x01));
         v >>= 1;
-        POKRAN--;
-        if (POKRAN & 0x80) break;
+        TEMP2--;
+        if (TEMP2 & 0x80) break;
     }
-    POKRAN = 0x09;                              /* fill rest with 'X'       */
+    TEMP2 = 0x09;                              /* fill rest with 'X'       */
     for (;;) {
         (void)vg_char(0x22, 0);                 /* L8534 JSR SaveCFlag      */
-        POKRAN--;
-        if (POKRAN & 0x80) break;
+        TEMP2--;
+        if (TEMP2 & 0x80) break;
     }
 }
 
 /* Swtst ($853C): beep while any switch is closed. Group 1 (POKEY1 ch 1):
- * d7/d6 of $0903..$0900 gathered into TEMP5. Group 2 (ch 2): STRT1 d7/d6,
+ * d7/d6 of $0903..$0900 gathered into TEMPA. Group 2 (ch 2): STRT1 d7/d6,
  * OPTNA1 d7, GAMSEL d7, and IN0 d0-d2 inverted (coin lines). The tone is
  * the gathered byte + $40 (the ADC's carry is the last ROL's carry-out,
  * which is always 0 - the byte never has its top bit set before that
@@ -476,14 +476,14 @@ static void swtst(void)
     uint8_t x, v, a, y;
 
     y = 0x00;
-    TEMP5 = 0x00;
+    TEMPA = 0x00;
     for (x = 3;; x--) {                         /* L8542 LDA HYPSW,X        */
         v = sd_hw_in1(x);
-        TEMP5 = (uint8_t)((TEMP5 << 1) | (v >> 7));         /* ASL / ROL   */
-        TEMP5 = (uint8_t)((TEMP5 << 1) | ((v >> 6) & 1));   /* ASL / ROL   */
+        TEMPA = (uint8_t)((TEMPA << 1) | (v >> 7));         /* ASL / ROL   */
+        TEMPA = (uint8_t)((TEMPA << 1) | ((v >> 6) & 1));   /* ASL / ROL   */
         if (x == 0) break;
     }
-    a = TEMP5;
+    a = TEMPA;
     if (a != 0) {                               /* L8550 BEQ                */
         a = (uint8_t)(a + 0x40);                /* ADC #$40, C = 0          */
         sd_hw_pokey_write(0, 0x00, a);          /* STA POKEY (AUDF1)        */
@@ -491,19 +491,19 @@ static void swtst(void)
     }
     sd_hw_pokey_write(0, 0x01, y);              /* L8559 STY $1001 (AUDC1)  */
     y = 0x00;
-    TEMP5 = 0x00;
+    TEMPA = 0x00;
     v = sd_hw_in1(4);                           /* STRT1: both bits here    */
-    TEMP5 = (uint8_t)((TEMP5 << 1) | (v >> 7));
-    TEMP5 = (uint8_t)((TEMP5 << 1) | ((v >> 6) & 1));
+    TEMPA = (uint8_t)((TEMPA << 1) | (v >> 7));
+    TEMPA = (uint8_t)((TEMPA << 1) | ((v >> 6) & 1));
     v = sd_hw_in1(5);                           /* ASL OPTNA1: d7           */
-    TEMP5 = (uint8_t)((TEMP5 << 1) | (v >> 7));
+    TEMPA = (uint8_t)((TEMPA << 1) | (v >> 7));
     v = sd_hw_in1(6);                           /* ASL GAMSEL: only bit 7   */
-    TEMP5 = (uint8_t)((TEMP5 << 1) | (v >> 7));
+    TEMPA = (uint8_t)((TEMPA << 1) | (v >> 7));
     v = (uint8_t)~sd_hw_in0();                  /* L8573-6: backwards       */
-    TEMP5 = (uint8_t)((TEMP5 << 1) | (v & 1)); v >>= 1;      /* LSR / ROL   */
-    TEMP5 = (uint8_t)((TEMP5 << 1) | (v & 1)); v >>= 1;
-    TEMP5 = (uint8_t)((TEMP5 << 1) | (v & 1));
-    a = TEMP5;
+    TEMPA = (uint8_t)((TEMPA << 1) | (v & 1)); v >>= 1;      /* LSR / ROL   */
+    TEMPA = (uint8_t)((TEMPA << 1) | (v & 1)); v >>= 1;
+    TEMPA = (uint8_t)((TEMPA << 1) | (v & 1));
+    a = TEMPA;
     if (a != 0) {                               /* L8583 BEQ                */
         a = (uint8_t)(a + 0x40);                /* ADC #$40, C = 0          */
         sd_hw_pokey_write(0, 0x02, a);          /* STA $1002 (AUDF2)        */
@@ -512,18 +512,18 @@ static void swtst(void)
     sd_hw_pokey_write(0, 0x03, y);              /* L858C STY $1003 (AUDC2)  */
 }
 
-/* Sftjse ($8626): dispatch the screen for OBJ through the RTS jump table
- * Sftjsr (target = table word + 1). OBJ only ever steps by 2 from 0 or 2, so
+/* Sftjse ($8626): dispatch the screen for $00A0 through the RTS jump table
+ * Sftjsr (target = table word + 1). $00A0 only ever steps by 2 from 0 or 2, so
  * an odd value (which would read a straddling pair) never happens; $0C and
  * above restart at 2. */
 static void sftjse(void)
 {
-    uint8_t x = OBJ;
+    uint8_t x = (g.ram[0x00A0]);
     uint16_t target;
 
     if (x >= 0x0C) {                            /* non valid state?         */
         x = 0x02;
-        OBJ = 0x02;                             /* start over               */
+        (g.ram[0x00A0]) = 0x02;                             /* start over               */
     }
     target = (uint16_t)((selftest_sftjsr[x] |
                         ((uint16_t)selftest_sftjsr[x + 1] << 8)) + 1);
@@ -534,7 +534,7 @@ static void sftjse(void)
     case 0x8379: stest8();     break;
     case 0x83CA: set_scale1(); break;
     case 0x841F: stst10();     break;
-    default:                   break;           /* odd OBJ: unreachable     */
+    default:                   break;           /* odd $00A0: unreachable     */
     }
 }
 
@@ -558,7 +558,7 @@ static void sig_anal_pass(int first)
 
     if (!first) {
         /* L8D3B: a pattern loaded and the AVG halted -> run it again      */
-        if (BLACK != 0 && (sd_hw_in0() & 0x40)) {
+        if (VGBRIT != 0 && (sd_hw_in0() & 0x40)) {
             sd_hw_vgreset();                    /* STA STOPAD               */
             sd_hw_vggo();                       /* STA GOADD                */
         } else {
@@ -572,8 +572,8 @@ static void sig_anal_pass(int first)
          * turned off, exit" - but this board's BRK vector is the IRQ
          * handler ($FFFE = $8639), which has no B-flag check: it runs, and
          * RTIs to $8D58, the $00 operand of the LDA #$00 at $8D57 - a
-         * SECOND BRK - whose RTI lands on $8D5A, the STA BLACK, with A
-         * still $10. So the switch-off path is two IRQ services and BLACK
+         * SECOND BRK - whose RTI lands on $8D5A, the STA VGBRIT, with A
+         * still $10. So the switch-off path is two IRQ services and VGBRIT
          * = $10 instead of 0, and the mode never exits. The hardware's
          * behaviour is what is reproduced. */
         sd_irq();
@@ -581,32 +581,32 @@ static void sig_anal_pass(int first)
     } else {
         a = 0x00;                               /* L8D57 LDA #$00           */
     }
-    BLACK = a;                                  /* L8D59 STA BLACK          */
-    /* LDA CABERE / ROL / ROL / ROL BLACK, then GAMSEL, then OPTNA1: two
-     * ROLs of A leave d6 in the carry, so BLACK gathers the d6 jumpers    */
-    BLACK = (uint8_t)((BLACK << 1) | ((sd_hw_in1(7) >> 6) & 1));
-    BLACK = (uint8_t)((BLACK << 1) | ((sd_hw_in1(6) >> 6) & 1));
-    BLACK = (uint8_t)((BLACK << 1) | ((sd_hw_in1(5) >> 6) & 1));
-    a = BLACK;
+    VGBRIT = a;                                  /* L8D59 STA VGBRIT          */
+    /* LDA CABERE / ROL / ROL / ROL VGBRIT, then GAMSEL, then OPTNA1: two
+     * ROLs of A leave d6 in the carry, so VGBRIT gathers the d6 jumpers    */
+    VGBRIT = (uint8_t)((VGBRIT << 1) | ((sd_hw_in1(7) >> 6) & 1));
+    VGBRIT = (uint8_t)((VGBRIT << 1) | ((sd_hw_in1(6) >> 6) & 1));
+    VGBRIT = (uint8_t)((VGBRIT << 1) | ((sd_hw_in1(5) >> 6) & 1));
+    a = VGBRIT;
     if (a == EAC2) return;                      /* L8D72 CMP / BEQ: same    */
     EAC2 = a;
     if (a == 0) {
         /* L8D9C: pattern 0 - fill $2000-$27FF with a ramp through the
-         * CHAN2V/RED pointer, BLUE the running value, BLACK the page count */
+         * XCOMP/RED pointer, VGLIST the running value, VGBRIT the page count */
         RED    = 0x20;
-        CHAN2V = 0x00;
-        BLUE   = 0x00;
-        BLACK  = 0x08;
+        XCOMP = 0x00;
+        VGLIST   = 0x00;
+        VGBRIT  = 0x08;
         do {
             y = 0;
             do {                                /* L8DAB                    */
-                g.vram[(((unsigned)RED - 0x20u) << 8) | y] = BLUE;
-                BLUE = (uint8_t)(BLUE + 0x05);  /* CLC / ADC #$05           */
+                g.vram[(((unsigned)RED - 0x20u) << 8) | y] = VGLIST;
+                VGLIST = (uint8_t)(VGLIST + 0x05);  /* CLC / ADC #$05           */
                 y++;
             } while (y != 0);                   /* INY / BNE                */
             RED++;
-            BLACK--;
-        } while (BLACK != 0);
+            VGBRIT--;
+        } while (VGBRIT != 0);
         sd_hw_vgreset();                        /* L8DBD JMP L8D96          */
         return;
     }
@@ -631,7 +631,7 @@ static void sig_anal_pass(int first)
 
 /* Frame timer (25 periods of the 3 kHz clock, ~8.3 ms), frame count, wait
  * for the AVG, then: DIAG STEP or slam (IN0 d5/d3 low) held three frames
- * steps OBJ to the next screen (SELECT as well -> signature analysis);
+ * steps $00A0 to the next screen (SELECT as well -> signature analysis);
  * the box, the screen, HALT, VGGO. Switch off -> WatchDogResetExit. */
 static void main_line_diag_frame(void)
 {
@@ -642,12 +642,12 @@ static void main_line_diag_frame(void)
     ZP_FRAME++;                                 /* L859F INC $A1            */
     sd_wait_vghalt();                           /* L85A1 BIT HALT / BVC     */
     /* ReloadVector: list pointer = $2000 */
-    BLUE = 0x00;
+    VGLIST = 0x00;
     EAC2 = 0x20;
     a = (uint8_t)(~sd_hw_in0() & 0x28);         /* switch pushed?           */
     if (a != 0) {
-        c = (YTOP & 0x80) != 0;                 /* L85B7 ASL YTOP           */
-        YTOP = (uint8_t)(YTOP << 1);
+        c = (TEMP9 & 0x80) != 0;                 /* L85B7 ASL TEMP9           */
+        TEMP9 = (uint8_t)(TEMP9 << 1);
         if (c) {                                /* pressed long enough      */
             if (sd_hw_in1(6) & 0x80) {          /* L85BB LDA GAMSEL / BPL   */
                 inisou();                       /* sound off                */
@@ -658,7 +658,7 @@ static void main_line_diag_frame(void)
                 sig_anal_pass(1);
                 return;
             }
-            OBJ = (uint8_t)(OBJ + 2);           /* L85C6-8: next test       */
+            (g.ram[0x00A0]) = (uint8_t)((g.ram[0x00A0]) + 2);           /* L85C6-8: next test       */
             for (x = 6;; x -= 2) {              /* L85CA-D6: AUDC1-4 off    */
                 sd_hw_pokey_write(0, (uint8_t)(1 + x), 0x00);
                 sd_hw_pokey_write(1, (uint8_t)(1 + x), 0x00);
@@ -666,10 +666,10 @@ static void main_line_diag_frame(void)
             }
         }
     } else {
-        YTOP = 0x20;                            /* not pressed: restart timer */
+        TEMP9 = 0x20;                            /* not pressed: restart timer */
     }
     /* L85DF: the box color - the color switch's on the crosshatch screen  */
-    if (OBJ == 0x0A) {
+    if ((g.ram[0x00A0]) == 0x0A) {
         a = (uint8_t)(ZP_17 & 0x07);
         if (a == 0) a = 0x01;
         y = (uint8_t)(a | 0xC0);                /* intensity                */
@@ -696,22 +696,22 @@ static void main_line_diag_frame(void)
 /* the bookkeeping screen: Averag, AllStopPlease, St2                  */
 /* ------------------------------------------------------------------ */
 
-/* Set0Balnking ($8C80) / PointerData ($8C81): SEC, A = $15 (NOBJ), then
- * SaveInpuParameers - draw y BCD bytes from NOBJ up, zero-suppressed. */
+/* Set0Balnking ($8C80) / PointerData ($8C81): SEC, A = $15 (TEMP7), then
+ * SaveInpuParameers - draw y BCD bytes from TEMP7 up, zero-suppressed. */
 static void set0_balnking(uint8_t y)
 {
     save_input_parameters(0x15, y, 1);
 }
 
-/* MultiplyBy2Decimal ($8C86): the 3-byte BCD number at NOBJ ($15-$17)
+/* MultiplyBy2Decimal ($8C86): the 3-byte BCD number at TEMP7 ($15-$17)
  * doubled, carry rippling. Times4Decimal ($8C98): twice. */
 static void multiply_by2_decimal(void)
 {
     int c = 0;                                  /* L8C86 CLC / SED          */
     uint8_t x;
     for (x = 0; x < 3; x++) {                   /* LDY #$02 .. DEY / BPL    */
-        bcd_res r = bcd_adc(g.ram[A_NOBJ + x], g.ram[A_NOBJ + x], c);
-        g.ram[A_NOBJ + x] = r.r;
+        bcd_res r = bcd_adc(g.ram[A_TEMP7 + x], g.ram[A_TEMP7 + x], c);
+        g.ram[A_TEMP7 + x] = r.r;
         c = r.c;
     }                                           /* CLD                      */
 }
@@ -728,64 +728,64 @@ static void correct_message_and_color(uint8_t y)
 {
     uint8_t x;
 
-    TEMP2 = y;                                  /* save Y                   */
+    TEMP5 = y;                                  /* save Y                   */
     center_beam_in_middle();
-    y = TEMP2;
+    y = TEMP5;
     vg_vctr_dark(selftest_msg_x[y], selftest_msg_y[y]); /* position        */
-    x = TEMP2;
+    x = TEMP5;
     pass_color(selftest_msg_color[x], selftest_msg_num[x]); /* (exit)      */
 }
 
 /* Averag ($89B9): for each of the 4 game types, average seconds per game
- * by repeated BCD subtraction: TEMP1-$12 = games played (3 bytes from
- * $01A6), WHITE-POKRAN = play time (4 bytes from EACS); the quotient - 1
+ * by repeated BCD subtraction: TEMP4-$12 = games played (3 bytes from
+ * $01A6), TEMP1-TEMP2 = play time (4 bytes from PLAYTIME); the quotient - 1
  * (or 0 for no games, $FF past 255) lands in $97+type. */
 static void averag(void)
 {
     uint8_t x, y, v;
 
-    TEMP7 = 0x03;
+    TEMPC = 0x03;
     for (;;) {                                  /* L89BD SED                */
-        y = TEMP7;
+        y = TEMPC;
         x = selftest_avgidx[y];                 /* index for # of games     */
         for (y = 0; y < 3; y++)                 /* Averag_10: 3 bytes       */
-            g.ram[A_TEMP1 + y] = g.ram[0x1A6 + x + y];
-        y = TEMP7;
+            g.ram[A_TEMP4 + y] = g.ram[0x1A6 + x + y];
+        y = TEMPC;
         x = selftest_timix[y];                  /* index for seconds        */
-        TEMP5 = 0x00;                           /* 0 games?                 */
+        TEMPA = 0x00;                           /* 0 games?                 */
         for (y = 0; y < 4; y++) {               /* Averag_20: 4 bytes       */
-            v = g.ram[A_EACS + x + y];
-            g.ram[A_WHITE + y] = v;
-            TEMP5 |= v;                         /* to check for 0 games     */
+            v = g.ram[A_PLAYTIME + x + y];
+            g.ram[A_TEMP1 + y] = v;
+            TEMPA |= v;                         /* to check for 0 games     */
         }
         y = 0x01;                               /* 1 will go to 0 (below)   */
-        if (TEMP5 != 0) {
+        if (TEMPA != 0) {
             y = 0x00;
             for (;;) {                          /* Averag_30                */
                 bcd_res r;
                 int c;
                 y++;
                 if (y == 0) break;              /* INY / BEQ _40            */
-                r = bcd_sbc(WHITE, TEMP1, 1);   /* SEC / SBC TEMP1          */
-                WHITE = r.r; c = r.c;
+                r = bcd_sbc(TEMP1, TEMP4, 1);   /* SEC / SBC TEMP4          */
+                TEMP1 = r.r; c = r.c;
                 r = bcd_sbc(EACE, NMROCK, c);
                 EACE = r.r; c = r.c;
-                r = bcd_sbc(VGBRIT, ZP_12, c);
-                VGBRIT = r.r; c = r.c;
-                r = bcd_sbc(POKRAN, 0x00, c);   /* come along carry         */
-                POKRAN = r.r;
+                r = bcd_sbc((g.ram[0x0009]), ZP_12, c);
+                (g.ram[0x0009]) = r.r; c = r.c;
+                r = bcd_sbc(TEMP2, 0x00, c);   /* come along carry         */
+                TEMP2 = r.r;
                 if (r.n) break;                 /* BPL _30: not done yet    */
             }
         }
         /* Averag_40: CLD */
         y--;                                    /* DEY / TYA                */
-        g.ram[0x97 + TEMP7] = y;                /* a good place to put it   */
-        if (TEMP7 == 0) { TEMP7 = 0xFF; break; }/* DEY / STY TEMP7 / BPL    */
-        TEMP7--;
+        g.ram[0x97 + TEMPC] = y;                /* a good place to put it   */
+        if (TEMPC == 0) { TEMPC = 0xFF; break; }/* DEY / STY TEMPC / BPL    */
+        TEMPC--;
     }
 }
 
-/* Clrbuf ($8CB8): the bookkeeping cells EAREQU+$00..$29 and their $97..
+/* Clrbuf ($8CB8): the bookkeeping cells ONTIME+$00..$29 and their $97..
  * display copies to zero. ClearTimes ($8CB5) requests the EAROM
  * bookkeeping batch zeroed first; ClearBoth ($8CC5) zeroes both batches
  * and recopies the default initials; ClearScores ($8CCE) just the scores. */
@@ -793,7 +793,7 @@ static void clrbuf(void)
 {
     uint8_t x;
     for (x = 0x29;; x--) {                      /* Clrbuf_10                */
-        g.ram[A_EAREQU + x] = 0x00;             /* clear RAM also           */
+        g.ram[A_ONTIME + x] = 0x00;             /* clear RAM also           */
         g.ram[0x97 + x] = 0x00;                 /* clear temp buffer too    */
         if (x == 0) break;
     }
@@ -847,23 +847,23 @@ void all_stop_please(void)
     ZP_35 = 0x00;                               /* end any game here        */
     g.ram[0xD1] = 0x00;                         /* always English           */
     LANGBT = 0x00;                              /* allow coins again        */
-    BLUE = 0x00;                                /* L8A2E-34: list at $2000  */
+    VGLIST = 0x00;                                /* L8A2E-34: list at $2000  */
     EAC2 = 0x20;
     vg_add2(0x94, 0xAA);                        /* L8A36                    */
     for (y = 0x08; y <= 0x0C; y++)              /* '1 PLAYER' .. 'AVG GAME TIME' */
         correct_message_and_color(y);
-    NOBJ = 0x02;                                /* space station / fighters */
+    TEMP7 = 0x02;                                /* space station / fighters */
     for (;;) {                                  /* AllStopPlease_10         */
         center_beam_in_middle();
-        y = NOBJ;
+        y = TEMP7;
         vg_vctr_dark(0x98, selftest_fs_ypos[y]);        /* Y pos            */
         (void)vg_char(0x10, 0);                         /* 'F'              */
         center_beam_in_middle();
-        y = NOBJ;
+        y = TEMP7;
         vg_vctr_dark(0x98, selftest_fs_ypos[3 + y]);    /* Y2pos            */
         (void)vg_char(0x1D, 0);                         /* 'S'              */
-        NOBJ--;
-        if (NOBJ & 0x80) break;                 /* DEC NOBJ / BPL           */
+        TEMP7--;
+        if (TEMP7 & 0x80) break;                 /* DEC TEMP7 / BPL           */
     }
     vg_add2(0x54, 0xE2);                        /* so next swap goes to the
                                                  * first buffer            */
@@ -889,7 +889,7 @@ static void st2_frame(void)
     g.vram[0x0A7] = a;
     /* L8A99 STA WTCHDG: watchdog kick dropped                             */
     x = (a & 0x02) ? 0x20 : 0x24;               /* L8A9C-A2                 */
-    BLUE = 0xA8;                                /* St2_12                   */
+    VGLIST = 0xA8;                                /* St2_12                   */
     EAC2 = x;
     sd_hw_vggo();                               /* L8AAA STA GOADD          */
     a = (uint8_t)(sub_8f43() + 0x0D);           /* diff reading + message #
@@ -910,11 +910,11 @@ static void st2_frame(void)
     gtoptn();
     a = g.ram[0xD1];                            /* PHA: save language       */
     g.ram[0xD1] = 0x00;                         /* always English           */
-    WHITE = g.ram[0x47];                        /* lives                    */
+    TEMP1 = g.ram[0x47];                        /* lives                    */
     do {                                        /* L8AF3: a ship per life   */
         vg_add2(sd_vecrom[0x30AC - 0x2800], sd_vecrom[0x30AF - 0x2800]);
-        WHITE--;
-    } while (WHITE != 0);                       /* DEC WHITE / BNE          */
+        TEMP1--;
+    } while (TEMP1 != 0);                       /* DEC TEMP1 / BNE          */
     set_vg_scale(0x01, 0x01);                   /* return to normal; Y = 1  */
     center_beam_in_middle();                    /* center                   */
     vg_vctr_dark(0xA0, 0x00);                   /* position for lang letter */
@@ -927,40 +927,40 @@ static void st2_frame(void)
     }
     correct_message_and_color(0x07);            /* 'TOTAL ON TIME'          */
     for (x = 3;; x--) {                         /* St2_50: to page 0        */
-        g.ram[A_NOBJ + x] = g.ram[A_EAREQU + x];
+        g.ram[A_TEMP7 + x] = g.ram[A_ONTIME + x];
         if (x == 0) break;
     }
     times4_decimal();                           /* seconds times 4          */
     set0_balnking(0x04);
     /* TimeDisplayCalulationsHere */
-    TEMP7 = 0x03;                               /* game number              */
+    TEMPC = 0x03;                               /* game number              */
     for (;;) {                                  /* _20                      */
-        x = TEMP7;
+        x = TEMPC;
         y = selftest_timix[x];                  /* offset into RAM          */
         for (x = 0; x < 4; x++)                 /* _21: 4 bytes             */
-            g.ram[A_NOBJ + x] = g.ram[A_EACS + y + x];
+            g.ram[A_TEMP7 + x] = g.ram[A_PLAYTIME + y + x];
         center_beam_in_middle();
-        y = TEMP7;
+        y = TEMPC;
         vg_vctr_dark(selftest_tipos[y], selftest_tipos[4 + y]);
         times4_decimal();                       /* actual second count      */
         set0_balnking(0x04);                    /* 8 digits                 */
         center_beam_in_middle();
-        y = TEMP7;
+        y = TEMPC;
         vg_vctr_dark(selftest_gmpos[y], selftest_gmpos[4 + y]);
-        x = TEMP7;
+        x = TEMPC;
         y = selftest_avgidx[x];                 /* offset for this number   */
         for (x = 0; x < 3; x++)                 /* _22: 3 bytes             */
-            g.ram[A_NOBJ + x] = g.ram[0x1A6 + y + x];
+            g.ram[A_TEMP7 + x] = g.ram[0x1A6 + y + x];
         set0_balnking(0x03);                    /* 6 digits                 */
         center_beam_in_middle();
-        y = TEMP7;
+        y = TEMPC;
         vg_vctr_dark(selftest_avpos[y], selftest_avpos[4 + y]);
-        y = TEMP7;                              /* max avg is 255 x 4 s     */
+        y = TEMPC;                              /* max avg is 255 x 4 s     */
         hex_bcd_conversion_input(g.ram[0x97 + y]);
         times4_decimal();                       /* 4-count seconds          */
         set0_balnking(0x02);                    /* 4 digits                 */
-        if (TEMP7 == 0) { TEMP7 = 0xFF; break; }/* DEC TEMP7 / BMI _30      */
-        TEMP7--;
+        if (TEMPC == 0) { TEMPC = 0xFF; break; }/* DEC TEMPC / BMI _30      */
+        TEMPC--;
     }
     /* TimeDisplayCalulationsHere_30 */
     correct_message_and_color(0x00);            /* 'PUSH START & SELECT'    */
@@ -984,7 +984,7 @@ static void st2_frame(void)
         correct_message_and_color(0x05);        /* 'ERASING'                */
     correct_message_and_color(0x06);            /* 'BONUS ADDER'            */
     x = (uint8_t)((ZMINE >> 5) & 0x07);         /* ROL x4 / AND #$07: d7-d5 */
-    NOBJ = selftest_bonus_disp[x];              /* display info             */
+    TEMP7 = selftest_bonus_disp[x];              /* display info             */
     /* L8C07 CLC: dead, Set0Balnking sets C                                */
     set0_balnking(0x01);
     center_beam_in_middle();                    /* center beam then...      */
@@ -996,7 +996,7 @@ static void st2_frame(void)
         ZP_44 = 0x00;                           /* start attract over       */
         ZP_45 = 0x00;
         NROCKS = 0x00;
-        SAUMIN = 0x00;
+        ATSTG = 0x00;
         cpu_loop = SD_LOOP_START2;
         pwron();                                /* L8C2F JMP Pwron          */
         return;

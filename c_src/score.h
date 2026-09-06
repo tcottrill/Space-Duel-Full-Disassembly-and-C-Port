@@ -19,8 +19,8 @@
  * live score against the running high-score table for the selected game
  * type, insert it if it beats an entry, and flag initials entry. No
  * arguments; reads ZP_34 (game type) and a live 3-byte score staged by
- * the caller at $3A/$3B/$3C (+3/+6 per slot - see NOTES_score.md for the
- * zero-page reuse this depends on). */
+ * the caller at SCORE $3A/$3B/$3C (+3/+6 per slot - see NOTES_score.md
+ * section 2a). */
 void update_high_score_table(void);
 
 /* Display4Names ($7529, A2NAME): draws the up to 4 game-select boxes,
@@ -30,7 +30,7 @@ void update_high_score_table(void);
 void display_4_names(void);
 
 /* HexBcdConversionInput ($8C62): binary -> 2-3 digit BCD "double dabble"
- * conversion, In: a = binary value. Out: NOBJ = low 2 BCD digits,
+ * conversion, In: a = binary value. Out: TEMP7 = low 2 BCD digits,
  * g.ram[0x16] = BCD hundreds digit (unnamed scratch). Exposed (not
  * static) because the self-test module ($8BA6, not yet on disk) shares
  * this exact routine - it should extern this instead of duplicating it. */
@@ -44,7 +44,7 @@ void hex_bcd_conversion_input(uint8_t a);
  * game end.  In: a = the BCD points in tens ($10 = 100 points); OWNER
  * ($038E) names the player (bit 7 = nobody -> immediate RTS); $CF (the
  * difficulty level) is added in and decremented.  Out: nothing; the ROM
- * clobbers X (callers reload it from XCOMP/WHITE) and preserves Y.
+ * clobbers X (callers reload it from TEMP3/TEMP1) and preserves Y.
  * A no-op outside a game (`BIT $35 / BMI`). */
 void add_points_to_score(uint8_t a);
 

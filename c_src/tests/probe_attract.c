@@ -103,7 +103,7 @@ static int load_ref(const char* kind, int frame, uint8_t* buf, size_t len)
 /* ------------------------------------------------------------------ */
 
 /* POKEY RANDOM: the oracle's shared 17-bit LFSR, 8 shifts per read.
- * The read COUNT is the port's instruction-path checksum (NOTES_oracle.md
+ * The read $007F is the port's instruction-path checksum (NOTES_oracle.md
  * section 1), so it is counted and, with SD_PROBE_RND=<file>, logged. */
 static uint32_t lfsr = 0x1FFFF;
 static unsigned long rnd_count;
@@ -209,10 +209,10 @@ static long total_bad, total_stack;
  *
  * The mask deliberately does NOT cover the whole page.  Page 1 below this
  * is DATA, not stack, and the game reads it back constantly - the initials
- * table (INITL $0122), the EAROM buffer and its state machine (EABUF $016D,
- * EAZFLG $018D ... EACS $0196), the bookkeeping counters (ONTIME $0197,
- * BONTIME $019B, PLAYTIME $019F, GAMES1 $01AF) and THRENG $01E0, the
- * highest data alias in spaceduel_defines.asm.  irq.c reads EAREQU $018E
+ * table ($0122 $0122), the EAROM buffer and its state machine ($016D $016D,
+ * EACS $018D ... PLAYTIME $0196), the bookkeeping counters ($0197 $0197,
+ * $019B $019B, $019F $019F, $01AF $01AF) and THRENG $01E0, the
+ * highest data alias in spaceduel_defines.asm.  irq.c reads ONTIME $018E
  * every four seconds; mainline's SetUpInitialsHigh writes $0118,Y at boot.
  * All of that is COMPARED, and it currently matches byte-for-byte - which
  * is what proves earom.c and the initials code correct.  Masking the whole

@@ -17,6 +17,7 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "../sd_platform.h"
@@ -34,6 +35,95 @@
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
+
+/* ---- option switches -------------------------------------------------
+ * [dips] in sd_win.ini: one key per option-switch group, each a word from
+ * its list.  Modelled on the Asteroids Deluxe port's backend, and the bit
+ * values are the AAE/MAME `bwidow` driver's INPUT_PORTS_START(spacduel) -
+ * the same driver the Gravitar disassembly cross-checks against.  An
+ * unknown word falls back to the default; whatever was chosen is written
+ * back, so the ini always shows the spelling that took effect.
+ *
+ * The board straps both banks to the POKEYs' pot pins, so the ROM reads
+ * them through ALLPOT: DSW0 on POKEY1 ($1008, Gtoptn $76DB) and DSW1 on
+ * POKEY2 ($1408, CheckForStartEnd _12).  The ROM then EORs each byte to
+ * correct for all-switches-off, so the bit patterns below are what the
+ * SWITCHES read, not what the game variables hold:
+ *
+ *   OPTN1 = DSW0 ^ $85   lives = (OPTN1 & 3) + 3, difficulty (OPTN1>>2)&3
+ *                        into Fighters/SpaceStation $7728, language
+ *                        (OPTN1>>4)&3, bonus (OPTN1>>6)&3 into Bonus $7724
+ *   ZMINE = DSW1 ^ $02   coin mode (ZMINE & 3), right-mech multiplier
+ *                        (ZMINE>>2)&3, centre mech (ZMINE>>4)&1, bonus
+ *                        adder (ZMINE>>5) into NumberUnitCoinsRequired $74CF
+ *
+ * Every value below was checked against those ROM tables, and the four
+ * difficulty words are the ROM's own: the self-test prints messages
+ * $19/$10/$11/$25 = EASY / NORMAL / MEDIUM / HARD for switch 0-3.
+ *
+ * One correction to the driver: it labels DSW1 $80 "6 credits/6 coins",
+ * but NumberUnitCoinsRequired[4] is 5, so that setting is one bonus coin
+ * every FIVE - 6 credits for 5 coins, which is what the key is called.
+ *
+ * Defaults are the factory settings: DSW0 $01 = 3 lives, normal, English,
+ * bonus at 10000; DSW1 $00 = 1 coin 1 credit, x1 mechs, no bonus coins. */
+static uint8_t dsw_pokey1 = 0x01;
+static uint8_t dsw_pokey2 = 0x00;
+
+uint8_t plat_dsw_pokey1(void) { return dsw_pokey1; }
+uint8_t plat_dsw_pokey2(void) { return dsw_pokey2; }
+
+static uint8_t dip_pick(const char *name, const char *const *names,
+                        const uint8_t *vals, int n, int def)
+{
+    char *s = get_config_string("dips", name, names[def]);
+    int pick = def;
+    if (s) {
+        for (int i = 0; i < n; i++)
+            if (_stricmp(s, names[i]) == 0) { pick = i; break; }
+        free(s);
+    }
+    set_config_string("dips", name, names[pick]);
+    return vals[pick];
+}
+
+static void read_dips(void)
+{
+    /* DSW0, on POKEY1's pot pins ($1008) */
+    static const char *const lives_n[] = { "3", "4", "5", "6" };
+    static const uint8_t     lives_v[] = { 0x01, 0x00, 0x03, 0x02 };
+    static const char *const diff_n[]  = { "easy", "normal", "medium", "hard" };
+    static const uint8_t     diff_v[]  = { 0x04, 0x00, 0x0C, 0x08 };
+    static const char *const lang_n[]  = { "english", "german", "french", "spanish" };
+    static const uint8_t     lang_v[]  = { 0x00, 0x10, 0x20, 0x30 };
+    static const char *const bonus_n[] = { "8000", "10000", "15000", "none" };
+    static const uint8_t     bonus_v[] = { 0xC0, 0x00, 0x40, 0x80 };
+    /* DSW1, on POKEY2's pot pins ($1408) */
+    static const char *const coin_n[]  = { "2_coins_1_play", "1_coin_1_play",
+                                           "1_coin_2_plays", "free_play" };
+    static const uint8_t     coin_v[]  = { 0x01, 0x00, 0x03, 0x02 };
+    static const char *const right_n[] = { "x1", "x4", "x5", "x6" };
+    static const uint8_t     right_v[] = { 0x00, 0x04, 0x08, 0x0C };
+    static const char *const centre_n[] = { "x1", "x2" };
+    static const uint8_t     centre_v[] = { 0x00, 0x10 };
+    static const char *const badd_n[]  = { "none", "3_credits_2_coins",
+                                           "4_credits_3_coins", "5_credits_4_coins",
+                                           "6_credits_4_coins", "6_credits_5_coins" };
+    static const uint8_t     badd_v[]  = { 0x00, 0x20, 0xA0, 0x40, 0x60, 0x80 };
+
+    uint8_t d0 = 0, d1 = 0;
+    d0 |= dip_pick("lives",       lives_n,  lives_v,  4, 0);
+    d0 |= dip_pick("difficulty",  diff_n,   diff_v,   4, 1);
+    d0 |= dip_pick("language",    lang_n,   lang_v,   4, 0);
+    d0 |= dip_pick("bonus_life",  bonus_n,  bonus_v,  4, 1);
+    d1 |= dip_pick("coinage",     coin_n,   coin_v,   4, 1);
+    d1 |= dip_pick("right_coin",  right_n,  right_v,  4, 0);
+    d1 |= dip_pick("center_coin", centre_n, centre_v, 2, 0);
+    d1 |= dip_pick("bonus_coins", badd_n,   badd_v,   6, 0);
+    LOG_INFO("option switches: DSW0=%02X DSW1=%02X", d0, d1);
+    dsw_pokey1 = d0;
+    dsw_pokey2 = d1;
+}
 
 /* ---- AVG color map ---------------------------------------------------
  * The STAT word's low 3 bits select the beam color directly as RGB
@@ -390,6 +480,7 @@ int plat_init(void)
 
     /* Settings. beam_init reads [vector] from the same file. */
     set_config_file("sd_win.ini");
+    read_dips();
     /* vsync OFF by default: the game will pace itself at the hardware's
      * floating rate (as the Omega Race port established) and a vsynced
      * flip quantizes that to the panel's refresh, which reads as
@@ -609,13 +700,7 @@ void plat_input_poll(plat_inputs* in)
     }
 }
 
-/* DIP defaults = the MAME/AAE spacduel factory settings:
- * POKEY1 bank (DSW0): 0x01 = 3 lives, normal difficulty, English,
- * bonus at 10000. POKEY2 bank (DSW1): 0x00 = 1 coin 1 credit, no
- * bonus coins. Which bank answers which POKEY is core policy (sd_hw.h);
- * these just supply the bytes. */
-uint8_t plat_dsw_pokey1(void) { return 0x01; }
-uint8_t plat_dsw_pokey2(void) { return 0x00; }
+/* The option switches live at the top of this file, with read_dips(). */
 
 void plat_leds_out(uint8_t out_shadow) { (void)out_shadow; }
 

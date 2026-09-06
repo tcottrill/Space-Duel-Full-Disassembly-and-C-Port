@@ -69,6 +69,7 @@ are:
 | `[vector]` | the beam renderer: `linewidth` (beam width in pixels at the default 1024-wide window, scaling with the picture from there) and `line_smoothing` (the anti-alias feather, in physical pixels on any screen); `corner_strength` (the join disc's radius as a fraction of the half-width); `gain` (a constant added to each colour channel after the beam intensity — a brightness floor); `fire_point_size`; `phosphor_ms` (the afterglow's decay time constant, 0 = off) |
 | `[joystick]` | `deadzone` |
 | `[sound]` | `pokey_volume` — the two POKEYs' streamed output, 0 to 100 percent, 0 = off. `samples` — 0 or 1, whether wavs in `samples\` play over the synthesised output |
+| `[dips]` | both option-switch banks by name: `lives` (3/4/5/6), `difficulty` (easy/normal/medium/hard — the ROM's own four words), `language` (english/german/french/spanish), `bonus_life` (8000/10000/15000/none), `coinage` (2_coins_1_play/1_coin_1_play/1_coin_2_plays/free_play), `right_coin` and `center_coin` (the mech multipliers), `bonus_coins`. Defaults are the factory settings. An unknown word falls back to the default and the accepted spelling is written back |
 
 A missing `sd_c.nv` just leaves the high-score table blank, same as a
 fresh chip on the real board.
@@ -217,6 +218,18 @@ the same way. Regenerate with:
 ```bash
 python tools/gen_state.py
 ```
+
+That path was exercised in earnest once: the disassembly's page 0 and
+page 1 names turned out to be 9 bytes too high (see *The zero-page map
+was 9 bytes high* in [`../disasm/README.md`](../disasm/README.md)), so
+every alias below `$0200` moved. The port was already reading the right
+cells under the wrong names, so the migration was mechanical — rewrite
+each identifier to whatever the corrected table calls **the same
+address**, falling back to a plain `g.ram[0x..]` where nothing does.
+Because an alias expands to a literal address, that rewrite has an exact
+check: preprocess every translation unit before and after and compare the
+token streams. All 28 came out identical, and both differential probes
+held their baselines.
 
 The state itself is deliberately raw — `g.ram[0x400]` and
 `g.vram[0x800]`, the machine's own arrays, rather than a struct of

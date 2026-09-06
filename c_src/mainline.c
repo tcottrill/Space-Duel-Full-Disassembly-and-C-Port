@@ -58,17 +58,17 @@ extern uint8_t entry_input_exit_absolute(uint8_t a); /* $684B: A -> |A|     */
 void since_cannot_get_must(void);            /* SinceCannotGetMust $6AA5    */
 static void bells_wistles(void);             /* BellsWistles $768D          */
 /* Inco10 $6B6D (InitializeComet body): x = highest object slot to scan,
- * y = which player's comets (0/1); WHITE ($07) and EACE ($08, target
+ * y = which player's comets (0/1); TEMP1 ($07) and EACE ($08, target
  * object) are staged in RAM by the caller first.  Returns its exit 6502 X
  * (Onslaught's tail JMP ignores it; CompetitiveWantWaitOther needs it). */
 uint8_t inco10(uint8_t x, uint8_t y);
 /* AccHoldsAngleObject $4956: JSR FindDifferenceCoordinates then Klmi7;
- * x = object slot (XCOMP already = x), y = object tracked. */
+ * x = object slot (TEMP3 already = x), y = object tracked. */
 extern void acc_holds_angle_object(uint8_t x, uint8_t y);
 /* GetWrapAroundAngle $48ED: angle from object x to object y through the
  * screen wrap; returns 6502 A (the angle). */
 extern uint8_t get_wrap_around_angle(uint8_t x, uint8_t y);
-extern void klmi7(uint8_t a_angle);          /* Klmi7 $4959 (uses XCOMP)    */
+extern void klmi7(uint8_t a_angle);          /* Klmi7 $4959 (uses TEMP3)    */
 
 /* --- display (display.c, on disk - signatures verified against display.h) - */
 extern void inset2(void);                    /* Inset2 $4FEE                */
@@ -109,7 +109,7 @@ extern void inisou(void);                    /* Inisou $73A8                */
 extern void force_field_up(void);            /* ForceFieldUp $73D4          */
 extern void l2_saucers(void);                /* L2Saucers $7091             */
 /* Gates $72ED: high-score-table tune trigger. Parks the caller's live
- * 6502 X/Y in TEMP5/TEMP6 (oracle-visible), so the C caller passes them. */
+ * 6502 X/Y in TEMPA/TEMPB (oracle-visible), so the C caller passes them. */
 extern void gates(uint8_t x_in, uint8_t y_in);
 
 /* --- per-frame star service (lowones.c) --- */
@@ -140,26 +140,26 @@ void gtoptn(void)
 
     /* L76DB SEI / STA $100B / LDA $1008 / CLI: the strobe+read seam call */
     a = (uint8_t)(sd_hw_pokey1_diffsw() ^ 0x85);  /* correct for all-off  */
-    EASRCE = a;                             /* L76E5 STA EASRCE ($D0)     */
+    OPTN1 = a;                             /* L76E5 STA OPTN1 ($D0)     */
     a >>= 2;                                /* LSR/LSR: d2,d3 to bottom   */
     y = a;                                  /* TAY                        */
     x = (uint8_t)(a & 0x03);                /* switch setting             */
     /* L76ED LDA $34 / LSR / LSR: carry = game bit 1 = space-station game */
     if (ZP_34 & 0x02)
         x = (uint8_t)(x + 4);               /* second table of 4          */
-    KLMINC = mainline_fighters[x];          /* L76F7: level from table    */
+    DIFF = mainline_fighters[x];          /* L76F7: level from table    */
     a = (uint8_t)((y >> 2) & 0x03);         /* TYA/LSR/LSR/AND #$03       */
     g.ram[0xD1] = a;                        /* language (AS2MSG reads it) */
     if (ZP_35 & 0x80)                       /* BIT $35 / BMI Gtoptn_10    */
         return;                             /* not while a game is going  */
-    /* L7709 ROL/ROL/ROL then AND #$03 == the top two bits of EASRCE (the
+    /* L7709 ROL/ROL/ROL then AND #$03 == the top two bits of OPTN1 (the
      * carry the first ROL shifts in lands in bit 2 and is masked off) */
-    x = (uint8_t)((EASRCE >> 6) & 0x03);
+    x = (uint8_t)((OPTN1 >> 6) & 0x03);
     a = mainline_bonus_optn[x];             /* L770F                      */
-    OPTN1 = a;
-    LANG = a;
-    DIFF = a;                               /* bonus level                */
-    a = (uint8_t)((EASRCE & 0x03) + 0x03);  /* L7718: CLC/ADC -> 3..6     */
+    NXTBON = a;
+    (g.ram[0x00DA]) = a;
+    BONLVA = a;                               /* bonus level                */
+    a = (uint8_t)((OPTN1 & 0x03) + 0x03);  /* L7718: CLC/ADC -> 3..6     */
     g.ram[0x47] = a;                        /* ship hits (lives), plyr 1  */
     g.ram[0x48] = a;                        /* ship hits (lives), plyr 0  */
 }
@@ -206,7 +206,7 @@ void bigbang(void)
         if (x == 0) break;                  /* DEX/BPL                    */
     }
     NROCKS = 0;                             /* no rocks                   */
-    SAUMIN = 0;                             /* no special                 */
+    ATSTG = 0;                             /* no special                 */
 }
 
 /* Nxtstep ($43A3): step $34 to the next game via TableGameOrder; on a
@@ -239,16 +239,16 @@ int chkst1(void)
     uint8_t a, x;
 
     a = (uint8_t)(g.ram[0x48] | g.ram[0x47] |   /* hits (lives) left?     */
-                  g.ram[0xB8] | OBKLMINES);     /* ships still living?    */
+                  g.ram[0xB8] | (g.ram[0x00B9]));     /* ships still living?    */
     if (a != 0) return 0;                       /* Chkst1_90              */
     if (ZP_34 == 0) {                           /* competitive game       */
         a = (uint8_t)(PRTDAMAGE & g.ram[0x389]);/* both ships damaged?    */
         if (!(a & 0x80)) return 0;              /* one not damaged        */
     }
     /* Chkst1_20 */
-    if (SCORE != 0) return 0;                   /* already ending         */
+    if (GENDING != 0) return 0;                   /* already ending         */
     for (x = 7;; x--) {                         /* Chkst1_10              */
-        if (g.ram[A_OBSAUCER + x] != 0)         /* $BF-$C6 still active   */
+        if (g.ram[A_OBP0MINES + x] != 0)         /* $BF-$C6 still active   */
             return 0;
         if (x == 0) break;
     }
@@ -263,7 +263,7 @@ int chkst1(void)
                                                  * minus, so...           */
     if (!(a & 0x80))
         x = 0x10;                               /* ...X is always $10     */
-    SCORE = x;                                  /* Chkst1_17: end timer   */
+    GENDING = x;                                  /* Chkst1_17: end timer   */
     STRTLOK = 0x80;                             /* no starts allowed      */
     update_info_at_end();
     update_high_score_table();
@@ -279,11 +279,11 @@ int check_for_start_end(void)
     uint8_t a, y;
 
     if (ZP_35 != 0) {                           /* game in progress?      */
-        if (SCORE == 0)
+        if (GENDING == 0)
             return chkst1();                    /* L4162 JMP Chkst1       */
         /* CheckForStartEnd_6: game-over sequence running */
-        SCORE++;                                /* L4165 INC SCORE        */
-        if (SCORE != 0) {                       /* BEQ _7: not over yet   */
+        GENDING++;                                /* L4165 INC GENDING        */
+        if (GENDING != 0) {                       /* BEQ _7: not over yet   */
             mesgpos(0xE4, 0x04);                /* position message       */
             UPDOWN = 0x07;                      /* LDY #$07 / STY UPDOWN:
                                                  * normal message always  */
@@ -300,7 +300,7 @@ int check_for_start_end(void)
             /* Live 6502 registers at $4190: X = $FF (Bigbang's DEX/BPL
              * exit), Y = 1 (every path into CheckForStartEnd leaves the
              * last VG word appender's Y; see NOTES_mainline.md). Gates
-             * parks them in TEMP5/TEMP6. */
+             * parks them in TEMPA/TEMPB. */
             gates(0xFF, 0x01);                  /* high score sound       */
             SPECEX = 0x00;
         }
@@ -311,12 +311,12 @@ int check_for_start_end(void)
         SDELAY = 0;
         g.ram[0x26E] = 0;                       /* SDELAY, ship 1         */
         g.ram[0xB8] = 0;
-        OBKLMINES = 0;
+        (g.ram[0x00B9]) = 0;
         return 0;                               /* CLC                    */
     }
 
     /* CheckForStartEnd_10: attract mode */
-    a = (uint8_t)(TEMP8 | TEMPB | ZP_44);       /* no credit, coins, and  */
+    a = (uint8_t)(DIAGBI | (g.ram[0x0026]) | ZP_44);       /* no credit, coins, and  */
     if (a == 0) {                               /* frame counter just 0   */
         a = (uint8_t)((ZP_45 & 0x07) ^ 0x02);
         if (a == 0) {                           /* attract stage 2        */
@@ -324,14 +324,14 @@ int check_for_start_end(void)
             a = nxtstep();                      /* step to next game      */
             if (a != 0 && a >= 0x02)            /* BEQ _4 / CMP #$02 BCC  */
                 y = 0x80;
-            LASTSW = y;                         /* CheckForStartEnd_4     */
+            TOGCOMB = y;                         /* CheckForStartEnd_4     */
             gtoptn();                           /* options + lives        */
             SDELAY = 0x20;                      /* make ship appear       */
             g.ram[0x26E] = 0x20;
             SCSHSP = 0x80;                      /* want saucers mad       */
             g.ram[0x39E] = 0x80;
             g.ram[0xB8] = 0;                    /* turn off old ship      */
-            OBKLMINES = 0;
+            (g.ram[0x00B9]) = 0;
             IANGLE = 0;                         /* point straight up      */
             g.ram[0x3D1] = 0;
         }
@@ -339,8 +339,8 @@ int check_for_start_end(void)
     /* CheckForStartEnd_3 */
     if (!(LANGBT & 0x80)) {                     /* coin routine running   */
         a = 0x08;
-        if (TEMP8 >= 0x12)                      /* CPY #$12 / BCC _1      */
-            TEMP8 = 0x12;                       /* credit limit           */
+        if (DIAGBI >= 0x12)                      /* CPY #$12 / BCC _1      */
+            DIAGBI = 0x12;                       /* credit limit           */
     } else {
         a = 0x00;                               /* CheckForStartEnd_11    */
     }
@@ -348,45 +348,45 @@ int check_for_start_end(void)
     if (SHHIGH != 0)
         SHHIGH--;                               /* high-score-table timer */
     /* CheckForStartEnd_8 */
-    TEMP2 = 0x00;                               /* default: sell players  */
-    XINCL = 0x00;                               /* for attract            */
+    TEMP5 = 0x00;                               /* default: sell players  */
+    KLMOFF = 0x00;                               /* for attract            */
     /* LDY #$08 then INY at _12 leaves Y = 9, dead (overwritten below)   */
     if (sd_hw_in1(5) & 0x40)                    /* BIT OPTNA1 / BVC _12   */
-        TEMP2--;                                /* selling games: -> $FF  */
+        TEMP5--;                                /* selling games: -> $FF  */
     /* _12: SEI / STA $140B / LDA $1408 / CLI = the option-DIP seam read */
     a = (uint8_t)(sd_hw_pokey2_optionsw() ^ 0x02);  /* all-off correction */
     ZMINE = a;
     a &= 0x03;
     if (a == 0) {                               /* free play              */
-        TEMP8 = 0x02;
-        TEMP7B = 0x02;                          /* no 2-coin minimum      */
+        DIAGBI = 0x02;
+        ZSAUCE = 0x02;                          /* no 2-coin minimum      */
         goto c15;                               /* BNE _15 (always)       */
     }
     /* CheckForStartEnd_35 */
     a = (uint8_t)(a + 0x07);                    /* CLC/ADC #$07           */
-    if (TEMP2 & 0x80)                           /* BIT TEMP2 / BPL _9     */
+    if (TEMP5 & 0x80)                           /* BIT TEMP5 / BPL _9     */
         a = (uint8_t)(a + 0x0D);                /* coin mode message      */
     y = a;                                      /* CheckForStartEnd_9     */
-    YTOP = 0xC6;
+    TEMP9 = 0xC6;
     /* CheckForStartEnd_80: 2-coin-minimum messaging */
     if (sd_hw_in1(6) & 0x40) {                  /* BIT GAMSEL / BVC _82   */
-        a = TEMP8;
+        a = DIAGBI;
         if (a == 0) {
-            TEMP7B = 0x80;                      /* L4246                  */
+            ZSAUCE = 0x80;                      /* L4246                  */
         } else if (a != 0x01) {
             goto c82;                           /* easy way out           */
         }
         /* L4251 */
-        if (!(TEMP7B & 0x80))
+        if (!(ZSAUCE & 0x80))
             goto c83;                           /* 1 credit, min satisfied */
         if ((ZP_44 & 0x20) == 0) {
             y = 0x12;                           /* alt message            */
-            YTOP = 0xC4;
+            TEMP9 = 0xC4;
         }
         goto c81;
     }
 c82:
-    TEMP7B = 0x00;                              /* don't allow this       */
+    ZSAUCE = 0x00;                              /* don't allow this       */
 c83:
     if ((ZP_44 & 0x20) != 0)
         goto c15;                               /* flash the message      */
@@ -399,17 +399,17 @@ c81:
     /* TYA/PHA brackets the message positioning */
     mesgpos(0xD3, 0x49);
     aux_routine_add_offset(0x00);               /* language X offset      */
-    brightness(YTOP, y);                        /* LDX YTOP / PLA,TAY     */
+    brightness(TEMP9, y);                        /* LDX TEMP9 / PLA,TAY     */
 c15:
-    y = TEMP8;
+    y = DIAGBI;
     if (y == 0) {                               /* no credit...           */
-        y = TEMPB;                              /* ...any coins?          */
+        y = (g.ram[0x0026]);                              /* ...any coins?          */
         if (y == 0) {
             /* CheckForStartEnd_14 */
             g.ram[0x31] |= 0x30;                /* turn off lights        */
             return 0;                           /* CLC                    */
         }
-        goto c47;                               /* game display (Y=TEMPB,
+        goto c47;                               /* game display (Y=$0026,
                                                  * dead in Display4Names) */
     }
     /* CheckForStartEnd_16: debounce the game-select switch */
@@ -418,15 +418,15 @@ c15:
                        ((a & 0x80) ? 0x80 : 0));/* ROR SAVBOT             */
     /* CheckForStartEnd_17 */
     if (!(STRTLOK & 0x80) &&                    /* locked out?            */
-        !(TEMP7B & 0x80) &&                     /* starts locked out?     */
+        !(ZSAUCE & 0x80) &&                     /* starts locked out?     */
         (sd_hw_in1(4) & 0x40)) {                /* BIT STRT1 / BVC _40    */
         /* start pushed */
-        if (!(TEMP2 & 0x80)) {                  /* selling players...     */
+        if (!(TEMP5 & 0x80)) {                  /* selling players...     */
             if (!(ZP_34 & 0x01))                /* LSR / BCS _20: even    */
-                TEMP8--;                        /* games cost 2 credits   */
+                DIAGBI--;                        /* games cost 2 credits   */
         }
         /* CheckForStartEnd_20 */
-        TEMP8--;                                /* ...and this is one     */
+        DIAGBI--;                                /* ...and this is one     */
         g.ram[0x31] &= 0xDF;                    /* turn on start lamp     */
         STRTLOK = 0x00;                         /* reset start lockout    */
         SPECEX = 0x00;                          /* in case this was on    */
@@ -440,7 +440,7 @@ c15:
     a = (uint8_t)((ZP_44 & 0x18) << 1);         /* lamp flash rate        */
     if ((SAVBOT & 0x80) &&                      /* BIT SAVBOT: pressed... */
         !(SAVBOT & 0x40) &&                     /* ...and not last time   */
-        !(TEMP7B & 0x80)) {                     /* not held by 2-coin min */
+        !(ZSAUCE & 0x80)) {                     /* not held by 2-coin min */
         if (STRTLOK & 0x80) {                   /* BIT STRTLOK / BPL _41  */
             a = (uint8_t)(LASTG & 0x03);        /* just in case not init  */
             ZP_34 = a;
@@ -462,9 +462,9 @@ c15:
         a = (uint8_t)(((a ^ g.ram[0x31]) & 0x30) ^ g.ram[0x31]);
         g.ram[0x31] = a;
         a = mainline_ttplayr[ZP_34];            /* credits required (1,2) */
-        if (TEMP2 & 0x80) break;                /* BMI _45: by the game   */
-        if (a == TEMP8) break;                  /* exactly enough         */
-        if (a < TEMP8) break;                   /* BCC _45: enough credit */
+        if (TEMP5 & 0x80) break;                /* BMI _45: by the game   */
+        if (a == DIAGBI) break;                  /* exactly enough         */
+        if (a < DIAGBI) break;                   /* BCC _45: enough credit */
         a = nxtstep();                          /* next game; BCS _46     */
     }
     /* CheckForStartEnd_45 */
@@ -474,7 +474,7 @@ c15:
         y = 0x0C;                               /* INY: two player        */
 c47:
     (void)y;    /* Display4Names overwrites Y (LDY #$03) - the message
-                 * pair selected above (or TEMPB via the _15 jump) is dead */
+                 * pair selected above (or $0026 via the _15 jump) is dead */
     if (SHHIGH != 0)
         return 0;                               /* _59: showing scores    */
     a = (uint8_t)(ZP_38 & ZP_39);
@@ -518,7 +518,7 @@ void uses_temp1_temp11(void)
     }
     /* UsesTemp1Temp11_3 */
     if (ZP_35 & 0x80) {                         /* game going: wait a     */
-        if (ZP_45 != 0 && SCORE == 0)           /* short time, then stop  */
+        if (ZP_45 != 0 && GENDING == 0)           /* short time, then stop  */
             LANGBT = 0x80;                      /* the coin routine       */
     }
     /* UsesTemp1Temp11_5 */
@@ -609,7 +609,7 @@ static void frca30(void)
     if (ZP_34 == 0 && (ZP_45 & 0x0F) == 0)
         initiate_killer_mine();
     /* Frca30_20 */
-    if (LASTSW & 0x80) {
+    if (TOGCOMB & 0x80) {
         a = ZP_45;
         if (!(a & 0x01)) {                      /* LSR / BCS Frca30_30    */
             a = (uint8_t)(BCOMSTART + 0x11);    /* ADC: C=0 from the LSR  */
@@ -712,12 +712,12 @@ static void done_above(void)
 
 /* Onslaught ($6AD1): between waves, feed queued onslaught comets into
  * play every 16th frame. Tail-calls Inco10 with the scan limit in X,
- * the owning player in Y/WHITE and the target object in EACE. */
+ * the owning player in Y/TEMP1 and the target object in EACE. */
 void onslaught(void)
 {
     uint8_t a, x, y;
 
-    a = (uint8_t)(NROCKS | SCORE);              /* rocks left / ending?   */
+    a = (uint8_t)(NROCKS | GENDING);              /* rocks left / ending?   */
     if (a != 0) return;                         /* Onslaught_90           */
     a = ZP_34;
     if (a >= 0x02) {                            /* CMP #$02 / BCC _10     */
@@ -744,7 +744,7 @@ void onslaught(void)
         }
     }
     /* Onslaught_95 */
-    WHITE = y;                                  /* for Ehasentered        */
+    TEMP1 = y;                                  /* for Ehasentered        */
     inco10(x, y);                               /* JMP Inco10 (always)    */
 }
 
@@ -755,11 +755,11 @@ void quick_end_end_onslaught(void)
     uint8_t a, x;
 
     if (ZP_35 == 0) return;                     /* not during attract     */
-    a = (uint8_t)(g.ram[0xB8] & OBKLMINES);     /* both exploding?        */
+    a = (uint8_t)(g.ram[0xB8] & (g.ram[0x00B9]));     /* both exploding?        */
     if (a & 0x80)                               /* BPL _1 skips           */
         stop_fuse_sound();
     /* QuickEndEndOnslaught_1 */
-    a = (uint8_t)(g.ram[0xB8] | OBKLMINES);     /* see if both dead       */
+    a = (uint8_t)(g.ram[0xB8] | (g.ram[0x00B9]));     /* see if both dead       */
     if (a != 0) return;
     /* QuickEndEndOnslaught_5 (A = 0 here) */
     for (x = 7;; x--) {                         /* remove comets          */
@@ -776,7 +776,7 @@ void quick_end_end_onslaught(void)
 
 /* SinceCannotGetMust ($6AA5): the per-wave comet difficulty ramp - step
  * both players' comet turn rate ceiling (NWCACH), top speed (NWCSPD) and
- * first-comet start speed (FCSPD) by the KLMINC-indexed amounts.
+ * first-comet start speed (FCSPD) by the DIFF-indexed amounts.
  * ROM QUIRK, kept: the `ADC NewCometAngleChange,Y` at $6AB0 never stores
  * its sum back to NWCACH,X - the next LDA overwrites A - so only its
  * CARRY OUT survives, feeding the NWCSPD add at $6AB6 (and the BCS at
@@ -787,7 +787,7 @@ void since_cannot_get_must(void)
     uint8_t a, x, y;
     unsigned s, c;
 
-    y = KLMINC;                                 /* L6AA7: the diff setting */
+    y = DIFF;                                 /* L6AA7: the diff setting */
     for (x = 1;; x--) {                         /* L6AA5 LDX #$01 / L_10   */
         a = g.ram[A_NWCACH + x];                /* L6AA9                   */
         c = (a >= 0x40);                        /* L6AAC CMP #$40          */
@@ -811,12 +811,12 @@ void since_cannot_get_must(void)
     }
 }
 
-/* InitializeComet ($6B68): spawn a comet/dwarf for player WHITE, aimed at
+/* InitializeComet ($6B68): spawn a comet/dwarf for player TEMP1, aimed at
  * the target object in EACE.  Falls into Inco10 with X = COMSTART,Y (the
  * highest slot to scan).  out = the exit 6502 X (see inco10). */
 uint8_t initialize_comet(void)
 {
-    uint8_t y = WHITE;                          /* L6B68: who gets it 0:1  */
+    uint8_t y = TEMP1;                          /* L6B68: who gets it 0:1  */
     return inco10(g.ram[A_COMSTART + y], y);    /* L6B6A LDX COMSTART,Y    */
 }
 
@@ -824,11 +824,11 @@ uint8_t initialize_comet(void)
  *   in   x = highest object slot to scan (clamped to $18), y = player;
  *        EACE ($08) = the target object ($21/$22), staged by the caller.
  *   out  the exit 6502 X: the scan position on the no-slot/full early
- *        exits, else ResetTimers' exit X (= WHITE).  MotionUpdateRoutine
+ *        exits, else ResetTimers' exit X (= TEMP1).  MotionUpdateRoutine
  *        consumes it after the $4A9C tail call.
- *   RAM  TEMP5 ($1C) holds the scan limit, then is CLOBBERED by the
+ *   RAM  TEMPA ($1C) holds the scan limit, then is CLOBBERED by the
  *        $6BF8 STA on the vary-Y placement path (ROM behavior, kept);
- *        POKRAN ($0A) = the first placement axis' distance.
+ *        TEMP2 ($0A) = the first placement axis' distance.
  * Placement loop: a POKEY1 RANDOM byte picks which axis rides a screen
  * edge; too-close tries again with the byte skewed +$21 (axis-1 fail,
  * $6C0C) or +$81 (total-distance fail, $6C18) - no further RANDOM reads,
@@ -845,9 +845,9 @@ uint8_t inco10(uint8_t x, uint8_t y)
         return x;                               /* not during a game       */
     if (x >= 0x19)                              /* L6B74 CPX #$19          */
         x = 0x18;                               /* too many: set to max    */
-    TEMP5 = a;                                  /* _4 (L6B7A)              */
+    TEMPA = a;                                  /* _4 (L6B7A)              */
     for (;;) {                                  /* _5                      */
-        if (x < TEMP5)                          /* L6B7C CPX / BCC _99     */
+        if (x < TEMPA)                          /* L6B7C CPX / BCC _99     */
             return x;                           /* no free slot            */
         a = g.ram[0x97 + x];                    /* L6B80                   */
         if (a == 0)                             /* BEQ _10: a free slot    */
@@ -884,7 +884,7 @@ uint8_t inco10(uint8_t x, uint8_t y)
             g.ram[A_OBJYH + x] = a;             /* L6BBD                   */
             a = (uint8_t)(a - g.ram[A_OBJYH + y]); /* L6BC0/C1 SEC/SBC     */
             a = entry_input_exit_absolute(a);   /* L6BC4                   */
-            POKRAN = a;                         /* the difference in Y     */
+            TEMP2 = a;                         /* the difference in Y     */
             c = (a >= 0x02);                    /* L6BC9 CMP #$02: minimum */
             a = r2;                             /* L6BCB PLA               */
             if (!c) {                           /* BCC _83: too close      */
@@ -908,14 +908,14 @@ uint8_t inco10(uint8_t x, uint8_t y)
             g.ram[A_OBJXH + x] = a;             /* L6BE4                   */
             a = (uint8_t)(a - g.ram[A_OBJXH + y]); /* L6BE7/E8 SEC/SBC     */
             a = entry_input_exit_absolute(a);   /* L6BEB                   */
-            POKRAN = a;                         /* the difference in X     */
+            TEMP2 = a;                         /* the difference in X     */
             a = r2;                             /* L6BF0 PLA               */
             a >>= 1;                            /* L6BF1 LSR: 0-$1F        */
             if (a >= 0x18) {                    /* L6BF2 CMP #$18          */
                 a = (uint8_t)(a - 0x18);        /* L6BF6 SBC (C=1): 0-7    */
-                TEMP5 = a;                      /* L6BF8: CLOBBERS the     */
+                TEMPA = a;                      /* L6BF8: CLOBBERS the     */
                                                 /* scan limit (ROM quirk)  */
-                a = (uint8_t)((a << 1) + TEMP5);/* L6BFA/FB ASL / ADC: *3  */
+                a = (uint8_t)((a << 1) + TEMPA);/* L6BFA/FB ASL / ADC: *3  */
             }
             /* _70 */
             g.ram[A_OBJYH + x] = a;             /* L6BFD                   */
@@ -929,7 +929,7 @@ uint8_t inco10(uint8_t x, uint8_t y)
             continue;                           /* JMP _15                 */
         }
         /* _85 */
-        a = (uint8_t)(a + POKRAN + 1);          /* L6C11 ADC (C=1 in)      */
+        a = (uint8_t)(a + TEMP2 + 1);          /* L6C11 ADC (C=1 in)      */
         c = (a >= 0x04);                        /* L6C13 CMP #$04: minimum */
         if (c)                                  /* L6C15/16 PLA / BCS      */
             break;                              /* Inco30: far enough      */
@@ -953,9 +953,9 @@ uint8_t inco10(uint8_t x, uint8_t y)
     } else if (sd_hw_pokey_random(0) < g.ram[0x0378 + y])   /* _40 (L6C4D) */
         sbttl_stcomet(x);                       /* CMP/BCS _70: else _50   */
     /* _70 (L6C58) */
-    XCOMP = x;                                  /* STX XCOMP               */
+    TEMP3 = x;                                  /* STX TEMP3               */
     a = find_difference_coordinates(x, y);      /* the first angle         */
-    x = XCOMP;                                  /* L6C5D LDX XCOMP         */
+    x = TEMP3;                                  /* L6C5D LDX TEMP3         */
     g.ram[0x0282 + x] = a;                      /* L6C5F                   */
     return reset_timers();                      /* L6C62 JMP (EXIT)        */
 }
@@ -968,7 +968,7 @@ void sub_6c79(uint8_t a)
     uint8_t x, y, v;
 
     x = (uint8_t)(a + 0x11);                    /* CLC / ADC #$11 / TAX   */
-    XCOMP = x;                                  /* $0C                    */
+    TEMP3 = x;                                  /* $0C                    */
     y = g.ram[A_GTIME + x];                     /* LDY GTIME,X: target    */
     v = g.ram[0x97 + x];                        /* object status          */
     if (v & 0x80) return;                       /* BMI Docoex: exploding  */
@@ -1028,7 +1028,7 @@ void set_up_initials_high(void)
         x = 0x0E;
         do {                                    /* L80D8                  */
             g.ram[0x118u + y] = mainline_ininitls[x];   /* STA $0118,Y    */
-            g.ram[0x0DCu + y] = 0x00;                   /* STA SAUMIN,Y   */
+            g.ram[0x0DCu + y] = 0x00;                   /* STA ATSTG,Y   */
             y--; x--;
             g.ram[0x0DCu + y] = 0x05;
             g.ram[0x118u + y] = mainline_ininitls[x];
@@ -1109,7 +1109,7 @@ void sd_boot(void)
     sd_cpu_loop_reset();                        /* PC: no test loop parked */
     sd_hw_vgreset();                            /* L8045 STA STOPAD       */
     for (i = 0; i < 0x100; i++) {               /* L804A clear loop       */
-        g.ram[0x000 + i] = 0;                   /* STA BLACK,X            */
+        g.ram[0x000 + i] = 0;                   /* STA VGBRIT,X            */
         g.ram[0x100 + i] = 0;                   /* STA $0100,X            */
         g.ram[0x200 + i] = 0;                   /* STA XINC,X             */
         g.ram[0x300 + i] = 0;                   /* STA $0300,X            */
@@ -1195,21 +1195,21 @@ void sd_mainline_frame(void)
     if (!(g.vram[0x001] & 0x02))
         x = 0x24;                               /* use upper buffer       */
     /* Start2_12 */
-    BLUE = 0x02;                                /* reset vector list      */
+    VGLIST = 0x02;                                /* reset vector list      */
     EAC2 = x;                                   /* pointer ($x002)        */
     vg_add2(0x94, 0xAA);                        /* JSRL word $A94 = $3528 */
-    a = (uint8_t)(ZP_35 | TEMP8 | TEMPB);       /* attract, no credit,    */
+    a = (uint8_t)(ZP_35 | DIAGBI | (g.ram[0x0026]));       /* attract, no credit,    */
     if (a == 0) {                               /* no coins...            */
         a = (uint8_t)(ZP_38 & ZP_39);
         if (a & 0x80) {                         /* ...and no initials     */
             vg_add2(0x64, 0xAF);                /* JSRL word $F64 = $3EC8 */
-            a = DIFF;                           /* bonus level (Gtoptn)   */
+            a = BONLVA;                           /* bonus level (Gtoptn)   */
             if (a != 0) {
                 uint8_t bonus = a;              /* PHA                    */
                 mesgpos(0xCA, 0xC2);            /* position for message   */
                 pass_color(0xE1, 0x0E);
                 EACE = bonus;                   /* PLA: save bonus amount */
-                WHITE = 0x00;                   /* for display            */
+                TEMP1 = 0x00;                   /* for display            */
                 /* SEC: zero suppression; $07 = page-0 pointer, 2 cells  */
                 save_input_parameters(0x07, 0x02, 1);
                 (void)display_digit(0x00);      /* add another 0          */
@@ -1233,7 +1233,7 @@ void sd_mainline_frame(void)
         if (!(a & 0x80))                        /* BPL Start2_60          */
             goto s60;
         if (SHHIGH == 0) {                      /* BNE Start2_13          */
-            if ((uint8_t)(TEMP8 | TEMPB) != 0)  /* coins or credits?      */
+            if ((uint8_t)(DIAGBI | (g.ram[0x0026])) != 0)  /* coins or credits?      */
                 goto s60;                       /* yes: no table needed   */
         }
         /* Start2_13 */

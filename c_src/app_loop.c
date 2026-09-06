@@ -100,7 +100,7 @@ extern void sd_mainline_frame(void); /* mainline.c: one Start2 pass       */
  * THE POLARITY TRAP (NOTES_oracle.md section 2): the coin inputs d2-d0 and
  * the slam input d3 are ACTIVE LOW.  coins.c's L741C reads a coin bit of 1
  * as "coin ABSENT", and L7442 reads d3 of 0 as "slam switch TRIPPED" (which
- * reloads the pre-coin timer TEMPA to $F0 every IRQ and wipes the coin
+ * reloads the pre-coin timer $0025 to $F0 every IRQ and wipes the coin
  * status cells $2A-$2F, so no credit can ever accumulate).  The oracle -
  * and therefore the probe - idles these bits LOW on purpose, so attract
  * runs forever and coins are impossible.  A cabinet must idle them HIGH.
@@ -180,7 +180,7 @@ uint8_t sd_hw_in0(void)
  *  $0904 STRT1  d7 thrust P1             objects.c move_ship() NEG(a) test
  *               d6 START                 mainline.c check_for_start_end()
  *  $0905 OPTNA1 d7 thrust P2             objects.c dorig3() sd_hw_in1(4+x)
- *               d6 "selling players"     mainline.c _12: TEMP2-- when set
+ *               d6 "selling players"     mainline.c _12: TEMP5-- when set
  *  $0906 GAMSEL d7 SELECT GAME           mainline.c _16 SAVBOT debounce
  *               d6 2-coin-minimum option mainline.c _80
  *  $0907 CABERE d7 cocktail cabinet      mainline.c uses_temp1_temp11()
@@ -940,16 +940,16 @@ int main(int argc, char** argv)
     }
 
     /* ---- insert a coin ------------------------------------------- */
-    credits_before = TEMP8;
+    credits_before = DIAGBI;
     hl_inputs.coin1 = 1;
     st_reset_stats(); st_run(12);            /* ~200 ms of coin present */
     hl_inputs.coin1 = 0;
     st_run(120);                             /* the $2A post-coin timer */
     st_report("coin inserted");
-    credits_after = TEMP8;
-    printf("  credits TEMP8 $20: %u -> %u   CNCT TEMPB $26 = %u   "
-           "ZMINE $24 = $%02X\n",
-           credits_before, credits_after, TEMPB, ZMINE);
+    credits_after = DIAGBI;
+    printf("  credits $$CRDT $20: %u -> %u   $CNCT $26 = %u   "
+           "$CMODE $24 = $%02X\n",
+           credits_before, credits_after, (g.ram[0x0026]), ZMINE);
     if (credits_after <= credits_before) {
         printf("  FAIL: the coin did not register\n");
         fails++;
@@ -977,7 +977,7 @@ int main(int argc, char** argv)
     st_report("game started");
     printf("  game flag $35 = $%02X (bit7 = playing)  game type $34 = %u  "
            "credits = %u  lives $47/$48 = %u/%u\n",
-           ZP_35, ZP_34, TEMP8, g.ram[0x47], g.ram[0x48]);
+           ZP_35, ZP_34, DIAGBI, g.ram[0x47], g.ram[0x48]);
     if (!(ZP_35 & 0x80)) {
         printf("  FAIL: start did not begin a game\n");
         fails++;
@@ -1041,7 +1041,7 @@ int main(int argc, char** argv)
      * Ship 0's torpedoes live in object status slots $28-$2B (g.ram[$BF]-
      * g.ram[$C2]): FireShipsTorpedos_20 enters Temp280Fast0 with the
      * start/stop indices from the $4D6B table, X = ship + 2.  The ROM
-     * edge-detects the button (CMBSCORE bit 7), so the switch has to be
+     * edge-detects the button (LASTSW bit 7), so the switch has to be
      * released between shots. */
     {
         int tries;
@@ -1149,14 +1149,14 @@ int main(int argc, char** argv)
         st_reset_stats(); st_run(30);
         loop = sd_cpu_loop();
         st_report("diagnostics (reset)");
-        printf("  CPU loop %d (2 = MainLineDiagLoop)  screen OBJ $%02X  "
+        printf("  CPU loop %d (2 = MainLineDiagLoop)  screen $A0 = %02X  "
                "ROM checksums $F0-$F6 = %02X %02X %02X %02X %02X %02X %02X  "
                "ERPLC $80-$83 = %02X %02X %02X %02X\n",
-               loop, OBJ,
+               loop, (g.ram[0x00A0]),
                g.ram[0xF0], g.ram[0xF1], g.ram[0xF2], g.ram[0xF3],
                g.ram[0xF4], g.ram[0xF5], g.ram[0xF6],
                g.ram[0x80], g.ram[0x81], g.ram[0x82], g.ram[0x83]);
-        if (loop != 2 || OBJ != 2 || st_seg_max == 0) {
+        if (loop != 2 || (g.ram[0x00A0]) != 2 || st_seg_max == 0) {
             printf("  FAIL: option 0 did not restart into the diagnostics\n");
             fails++;
         }
@@ -1164,8 +1164,8 @@ int main(int argc, char** argv)
         for (i = 0x80; i <= 0x83; i++) if (g.ram[i]) fails++, printf("  FAIL: ERPLC $%02X = %02X\n", i, g.ram[i]);
         hl_inputs.diag_step = 1; st_run(4);               /* F1 held       */
         hl_inputs.diag_step = 0; st_run(4);
-        printf("  after DIAG STEP: OBJ $%02X (expect $04, the next screen)\n", OBJ);
-        if (OBJ != 4) {
+        printf("  after DIAG STEP: $A0 = %02X (expect $04, the next screen)\n", (g.ram[0x00A0]));
+        if ((g.ram[0x00A0]) != 4) {
             printf("  FAIL: DIAG STEP did not advance the screen\n");
             fails++;
         }

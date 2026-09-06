@@ -244,7 +244,7 @@ void klmi7(uint8_t a_angle);                             /* $4959 */
    Y=1 per the `vg_add2` calling convention) - not independently re-derived
    from every possible caller of `check_for_start_end()`, since the mainline
    is its only caller and the mainline's own register history was traced.
-   Flagged in case a future oracle diff on TEMP5/TEMP6 disagrees.
+   Flagged in case a future oracle diff on TEMPA/TEMPB disagrees.
 4. **No probe/oracle diff was run in this pass** - the compile check is
    clean, but byte-for-byte parity against
    `tests/ref/` (CONVENTIONS rule 9) has not been re-verified here, since

@@ -30,7 +30,7 @@ void output_earom_erased_written(void);/* OutputEaromErasedWritten $8781 */
 /* buffer <-> live-cell copies */
 void transfer_high_scores_buffer(void);/* TransferHighScoresBuffer $886F: live -> buffer */
 void copy_from_buffer_back(void);      /* CopyFromBufferBack   $88B6: buffer -> live     */
-void copy_ontime_from_buffer(void);    /* CopyOntimeFromBuffer $89A3: EABC -> EAREQU     */
+void copy_ontime_from_buffer(void);    /* CopyOntimeFromBuffer $89A3: BONTIME -> ONTIME     */
 
 /* game-end bookkeeping: fold elapsed game time into totals, bump games-
  * played, stage+start the bookkeeping EAROM write (tail-calls

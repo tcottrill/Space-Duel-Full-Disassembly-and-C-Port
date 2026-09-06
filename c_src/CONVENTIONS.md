@@ -21,7 +21,7 @@ Rules:
    anonymous entry point `Lxxxx` becomes `sub_xxxx()` (lowercase hex) until
    its role earns it a name.
 1b. Reproduce EVERY store the ROM makes to RAM — scratch cells included
-   (TEMP1, NMROCK, POKRAN, ...). Full-RAM oracle diffs see them. Derive each
+   (TEMP4, NMROCK, TEMP2, ...). Full-RAM oracle diffs see them. Derive each
    routine's register protocol (what arrives in A/X/Y/C, what it returns)
    from ALL its call sites and document it above the function.
 1c. Multi-agent hygiene: a module owns only its listed files; shared headers

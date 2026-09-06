@@ -15,9 +15,9 @@
  * each 2-byte pair B0,B1 carries three 5-bit character codes plus a stop
  * flag - 16 bits = 5+5+5+1:
  *   char 1 = B0[7:3]              (LSR,LSR then AND #$3E in VectorMessage2)
- *   char 2 = B0[2:0] : B1[7:6]    (the ROL/ROL POKRAN/ROL/ROL/ASL chain)
+ *   char 2 = B0[2:0] : B1[7:6]    (the ROL/ROL TEMP2/ROL/ROL/ASL chain)
  *   char 3 = B1[5:1]
- *   B1[0]  = 1 -> last pair of the message (LSR POKRAN / BCC at $77C9)
+ *   B1[0]  = 1 -> last pair of the message (LSR TEMP2 / BCC at $77C9)
  * A character code of 0 terminates the message early (AND #$3E == 0 in
  * VectorMessage2 purges the return and exits through VectorMessage0).
  * Codes 1-4 index glyph words at $3248 + 2*code ($3456 upside down);
@@ -42,7 +42,7 @@ void vector_generator_message_processor(uint8_t y_msg); /* $7770 (yellow) */
 void brightness(uint8_t x_color, uint8_t y_msg); /* Brightness $7772 */
 void pass_color(uint8_t a_color, uint8_t y_msg); /* PassColor $7773 */
 void vector_message5(uint8_t y_msg);             /* VectorMessage5 $7779 (green) */
-void vector_message7(uint8_t y_color);           /* VectorMessage7 $777D; POKRAN
+void vector_message7(uint8_t y_color);           /* VectorMessage7 $777D; TEMP2
                                                   * ($0A) = message number */
 void vector_message6(uint8_t y_msg);             /* VectorMessage6 $7782 */
 

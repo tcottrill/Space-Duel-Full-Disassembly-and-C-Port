@@ -57,7 +57,7 @@ Per-object secondary arrays met here (base + object index):
 | `$0294` | heading, low | CANGLL `$2A5` / KANGLL `$2AD` |
 | `$037E` | comet type bits | COMTYP `$38F` (bit 0 = die at edge, bit 7 = is a comet) |
 | `$03B0` (GTIME) | target object | CTARGET `$3C1` / KTARGET `$3C9` |
-| `$00B0` | killer-mine hit count / colour | `$C9-$CE` |
+| `$00B0` | killer-mine hit count / colour | KLMINC `$C9-$CE` |
 | `$0252` / `$0250` | shield energy hi/lo | SHLDENG `$273` / LSHLDENG `$275` |
 | `$0369` | last thing bounced off | COLLIS `$38A` |
 | `$0367` | partial damage | PRTDAMAGE `$388` |
@@ -82,13 +82,13 @@ behind** because the ROM's next routine indexes with it.
 | `find_difference_coordinates` | $491F | x, y | A = angle |
 | `killer_mines` | $4937 | x = the mainline's live X | **exit X** |
 | `acc_holds_angle_object` | $4956 | x, y | exit X (tail call from the comet module $6C8D) |
-| `klmi7` | $4959 | A = angle; **XCOMP = the object** | exit X (tail call from $6C93) |
+| `klmi7` | $4959 | A = angle; **TEMP3 = the object** | exit X (tail call from $6C93) |
 | `competitive_want_wait_other` | $49E9 | x | exit X |
 | `scent5` | $4AA1 | a = target, x = saucer 0/1 | exit X |
-| `reset_timers` / `hasent` | $4B5C/$4B5E | (WHITE) / x = player | x |
+| `reset_timers` / `hasent` | $4B5C/$4B5E | (TEMP1) / x = player | x |
 | `enemy_fire_control` | $4B74 | a = `$44 & 3` (2/3), carry set | exit X |
 | `fire_ships_torpedos` | $4C70 | x = ship 0/1 | - |
-| `temp280_fast0` | $4CB5 | x = shooter, y = first slot; FOURPI = last slot; POKRAN bit 7 = fast | - |
+| `temp280_fast0` | $4CB5 | x = shooter, y = first slot; FOURPI = last slot; TEMP2 bit 7 = fast | - |
 | `fire3` | $4CC0 | x = shooter (0/1 saucer, 2/3 ship), y = torpedo slot | - |
 | `shpplace` | $4F1C | x = ship 0/1 | - |
 | `initialization` | $4F66 | - | - ; falls into `inset2()` |
@@ -111,12 +111,12 @@ behind** because the ROM's next routine indexes with it.
 | `process_shields` | $5BB9 | - | - |
 | `twin_game_both_shields` | $5BE9 | x = player | **the 6502 Y** = the raw IN1 byte (bit 7 = pushed) |
 | `game23_shields` | $5BFD | x = player | - |
-| `temp3_which_player0` | $5C24 | a = zp address of the 3 score bytes; XCOMP = area 0/1/2 | - |
+| `temp3_which_player0` | $5C24 | a = zp address of the 3 score bytes; TEMP3 = area 0/1/2 | - |
 | `initiate_killer_mine` | $672D | - | - |
 
 Carry is threaded explicitly wherever the ROM reads a carry its own
 routine did not set: `shipfriction(x, carry)` (it only reaches bit 0 of
-TEMP5 through `ROL TEMP5`, but that store is oracle-visible),
+TEMPA through `ROL TEMPA`, but that store is oracle-visible),
 `enemy_fire_control(a, carry)`, and `twin_game1_player`'s `_60` test.
 
 ## POKEY RANDOM reads (the LFSR read-count contract)
@@ -179,7 +179,7 @@ orchestrator to fold into headers:
 extern uint8_t part_signed_number_exit(uint8_t x, uint8_t y); /* $67D0 arctan:
                                      x = denominator, y = numerator -> A */
 extern void split_rock_into_fragments(void);   /* $6554, reads FOURPI     */
-extern void initialize_comet(void);            /* $6B68, reads WHITE      */
+extern void initialize_comet(void);            /* $6B68, reads TEMP1      */
 extern void expset(uint8_t x);                 /* $623E                   */
 extern void add_points_to_score(uint8_t a);    /* $5F68                   */
 extern void gtoptn(void);                      /* $76DB (mainline.c)      */
@@ -212,14 +212,14 @@ extern void inset2(void);                      /* $4FEE (display.c)       */
 `$14`, `$16`, `$17` scratch (ThrustTwoShips / WillAssumeRadiusBar /
 NewastStartNewAsteroids' "random spinner direction"); `$2A-$2D` the ships'
 16-bit velocity low bytes reached as `$2A,X`/`$2C,X` with X = `$21/$22`
-(i.e. `$4B/$4C` = X low, `$4D/$4E` = FRAME = Y low); `$31` "no more
+(i.e. `$4B/$4C` = X low, `$4D/$4E` = YINCL = Y low); `$31` "no more
 coins"; `$3A-$42` the three 3-byte BCD scores; `$47/$48` lives remaining;
-`$49/$4A` (CMBSCORE) the fire-button edge-detect shadows; `$4B-$4E` as
+`$49/$4A` (LASTSW) the fire-button edge-detect shadows; `$4B-$4E` as
 above; `$4F/$50` the shield-on flags (bit 7); `$53` "rocks off screen /
 screen full"; `$B0-$C6` the object status array; `$C9-$CE` killer-mine
 colour + hit count; `$CF` the current difficulty level (0-9); `$D3/$D4`
 saucer minimum velocities; `$D5-$D7` rock speed band (min +, min -,
-max +; `DIFCTY` `$D8` = max -); `$0221/$0223`, `$0251/$0253/$0255`,
+max +; `$00D8` `$D8` = max -); `$0221/$0223`, `$0251/$0253/$0255`,
 `$02CE-$02D8`, `$0300-$030A`, `$033F-$0343`, `$0371-$0375` object-array
 cells; `$0266`, `$026C`, `$026E`, `$0274`, `$0282`, `$0294`, `$037E`,
 `$0389`, `$0398`, `$039C`, `$03B5`, `$03BA`, `$03C0`, `$03C6`, `$03CE`,
@@ -242,7 +242,7 @@ Candidate names for the orchestrator: `$53` "ROCKSOFF", `$CF` "DIFLVL",
 | `obj_clearsaucer` | $53FB | 2 | ClearSaucer_100 |
 | `obj_entdwarf` | $5154 | 32 | EnteringDwarfAmoutns + Entdwtable |
 | `obj_initpos_m1` | $5967 | 16 | InitialPositionSpaceDuel, base-1 |
-| `obj_wave_tab` | $5BA5 | 20 | the five per-wave ramps indexed by KLMINC |
+| `obj_wave_tab` | $5BA5 | 20 | the five per-wave ramps indexed by DIFF |
 | `obj_toggles` | $6CCD | 8 | TableInitialValuesToggles + Ttogdrone |
 | `obj_km_tab` | $6CD9 | 54 | the six killer-mine speed/angle ramps |
 
@@ -277,8 +277,8 @@ no RAM effect; it became the `switch` in `up_the_difficulty()`.
    never writes `XINC,X`.
 6. **`ZeroAllRamPast` misses `$0300`** - the `DEX / BNE` loop stops at
    X = 0.
-7. **`Klmi7`'s `ROR TEMP5` pair** shifts the *previous* contents of TEMP5
-   out through the carry; TEMP5's final value therefore depends on its
+7. **`Klmi7`'s `ROR TEMPA` pair** shifts the *previous* contents of TEMPA
+   out through the carry; TEMPA's final value therefore depends on its
    stale value, and the oracle sees it.
 8. **`Scent5_20`'s `LDY SCSHSP,X`** loads a register nothing reads. No
    RAM effect, so nothing is emitted; noted here in case a later reading
@@ -310,7 +310,7 @@ no RAM effect; it became the `switch` in `up_the_difficulty()`.
    pre-call X with a comment; once the comet module lands, that extern
    should become `uint8_t initialize_comet(void)` returning its exit X.
 3. **Sound-trigger `(x_in, y_in)` at three sites is unknowable from here.**
-   `Badhab` parks the caller's live X/Y in TEMP5/TEMP6, and at
+   `Badhab` parks the caller's live X/Y in TEMPA/TEMPB, and at
    `$450D` (DestructionDuringCollision) and `$53E4` (KillXSaucer) the live
    registers are `AddPointsToScore`'s leftovers, while at `$5570`
    (MoveShip's ThrustSound) and `$5551/$5557`, `$5B24/$5B27`
@@ -321,7 +321,7 @@ no RAM effect; it became the `switch` in `up_the_difficulty()`.
    call sites simplify.
 4. **`Shipfriction`'s entry carry from `$54AB`** (`MoveShip`'s "if
    exploding" JMP) is the mainline caller's carry; `move_ship()` passes 0.
-   It only affects bit 0 of TEMP5. The `$556E` entry is exact.
+   It only affects bit 0 of TEMPA. The `$556E` entry is exact.
 5. `RetargetComets`' `$20`/`$23` targets (quirk 2) and `Updif3_60`'s
    self-add (quirk 3) are the two places where the ROM most clearly
    disagrees with its own comments. If an oracle diff ever disagrees with

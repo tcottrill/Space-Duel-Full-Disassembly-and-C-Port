@@ -21,11 +21,11 @@ void sd_irq(void)
 
     g.irq_count++;
 
-    TOTOBJ--;                               /* L8642 DEC TOTOBJ ($32)      */
-    a = TOTOBJ;
+    INTRPT--;                               /* L8642 DEC INTRPT ($32)      */
+    a = INTRPT;
     if ((a & 0x0F) == 0) {                  /* every 16th tick             */
         output_earom_erased_written();      /* EAROM update check          */
-        a = TOTOBJ;                         /* L864D reload                */
+        a = INTRPT;                         /* L864D reload                */
     }
     if ((a & 0x03) == 0)                    /* every 4th tick: the ~61.5Hz */
         ZP_33++;                            /*   mainline frame gate       */
@@ -34,19 +34,19 @@ void sd_irq(void)
     if (!(LANGBT & 0x80) && (sd_hw_in0() & 0x10))
         coin_routine();                     /* L8660 JSR L741A             */
 
-    if (TOTOBJ == 0) {                      /* L8663: once per 256 ticks   */
+    if (INTRPT == 0) {                      /* L8663: once per 256 ticks   */
         SECOND++;                           /*   (~1.04 s)                 */
         if ((SECOND & 0x03) == 0) {         /* every ~4 s: BCD bookkeeping */
             int c = 0;                      /* L8671 CLC ... SED           */
             if (!(ZP_35 & 0x80)) {          /* on-time only outside a game */
-                bcd_res r = bcd_adc(g.ram[A_EAREQU], 0x01, 0);
-                g.ram[A_EAREQU] = r.r; c = r.c;
-                r = bcd_adc(g.ram[A_EARWRQ], 0x00, c);
-                g.ram[A_EARWRQ] = r.r; c = r.c;
-                r = bcd_adc(g.ram[A_EABAD], 0x00, c);
-                g.ram[A_EABAD] = r.r; c = r.c;
-                r = bcd_adc(g.ram[A_EAFLG], 0x00, c);
-                g.ram[A_EAFLG] = r.r;
+                bcd_res r = bcd_adc(g.ram[A_ONTIME], 0x01, 0);
+                g.ram[A_ONTIME] = r.r; c = r.c;
+                r = bcd_adc(g.ram[0x018F], 0x00, c);
+                g.ram[0x018F] = r.r; c = r.c;
+                r = bcd_adc(g.ram[0x0190], 0x00, c);
+                g.ram[0x0190] = r.r; c = r.c;
+                r = bcd_adc(g.ram[0x0191], 0x00, c);
+                g.ram[0x0191] = r.r;
                 c = 0;                      /* L8697 CLC                   */
             }
             {                               /* game time, 4 s BCD counts   */
@@ -69,7 +69,7 @@ void sd_irq(void)
     /* ship rotation, both players (X = 1 then 0) */
     for (int x = 1; x >= 0; x--) {
         /* damaged ships only rotate on alternate tick pairs (flicker) */
-        if (g.ram[A_PRTDAMAGE + x] != 0 && (TOTOBJ & 0x02) != 0)
+        if (g.ram[A_PRTDAMAGE + x] != 0 && (INTRPT & 0x02) != 0)
             continue;                       /* L86CE BNE Irq_18            */
 
         /* left (Irq_12): game reads ROTL,X bit 7; attract uses $44 bit 7 */

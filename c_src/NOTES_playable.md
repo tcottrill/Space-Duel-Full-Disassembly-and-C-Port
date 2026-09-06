@@ -29,7 +29,7 @@ Idle byte **`0x3F`** plus the two synthesized bits (`0x40` HALT, `0x80`
 | d0 | coin, **right** mech (`coins.c` X=2, DIP "Coin B" ×1/×4/×5/×6) | **active low** | 1 | coin1, key `5` | `coins.c` L741C: `coin_absent = (in0 >> (2-x)) & 1` — a 1 means *no coin*. AAE `input_ports_spacduel`: `PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_COIN1)` |
 | d1 | coin, **centre** mech (X=1, DIP "Coin A" ×1/×2) | **active low** | 1 | coin2, key `6` | same; multiplier is `ZMINE` d4 (`coins.c` L7497) |
 | d2 | coin, **left** mech (X=0, always 1 unit-coin) | **active low** | 1 | coin3, key `8` | same; `coins.c` header, "X=0 is the left mech" |
-| d3 | slam / tilt | **active low** | 1 | none | `coins.c` L7442: `if (!(in0 & 0x08)) TEMPA = 0xF0` — low = switch tripped |
+| d3 | slam / tilt | **active low** | 1 | none | `coins.c` L7442: `if (!(in0 & 0x08)) $0025 = 0xF0` — low = switch tripped |
 | d4 | self-test | **active low**, 0 = test mode | 1 | test, key `9` (held) or the **F2 toggle** (`diag`, edge-detected into `test_latch`) | `mainline.c` `sd_boot` → `beginning_pattern()`, `sd_mainline_frame` → `all_stop_please()` (`selftest.c`, since 2026-09-01, `NOTES_selftest.md`). AAE: `PORT_BITX(0x10, ... Service_Mode)`, `PORT_DIPSETTING(0x00, On)` |
 | d5 | diagnostic step | **active low** | 1 | diag_step, key `F1` | AAE: `PORT_BITX(0x20, IP_ACTIVE_LOW, IPT_SERVICE, "Diagnostic Step")` |
 | d6 | VG HALT | 1 = AVG finished | synthesized | — | `mainline.c` `$401F BIT HALT / BVC`; §3 below |
@@ -39,7 +39,7 @@ Idle byte **`0x3F`** plus the two synthesized bits (`0x40` HALT, `0x80`
 
 The probe returns **`0x50`**. That leaves d3 **low** and d0-d2 **low**,
 which the ROM reads as *slam switch tripped* and *a coin sitting in every
-mech*. With slam active, `coin_routine`'s `_2` arm reloads `TEMPA` to `$F0`
+mech*. With slam active, `coin_routine`'s `_2` arm reloads `$0025` to `$F0`
 on **every** IRQ and wipes the coin status cells `$2A-$2F` — so no coin can
 ever complete its debounce and no credit can ever be tallied. That is
 deliberate for the attract oracle (attract must run forever) and is exactly
@@ -48,7 +48,7 @@ why coins never register with the probe's byte.
 A cabinet idles all four **high**. The observable consequence of getting
 this right, from the self-test run:
 
-    credits TEMP8 $20: 0 -> 1   CNCT TEMPB $26 = 0   ZMINE $24 = $02
+    credits $$CRDT $20: 0 -> 1   $CNCT $26 = 0   $CMODE $24 = $02
 
 The coin's own timing, straight out of `coins.c`, for anyone debugging it:
 the coin bit must go low for **≥ 5 IRQs (~20 ms)** so the `$2D+X`
@@ -69,12 +69,12 @@ against AAE's own hardware decode (`drivers/bwidow.cpp`
 
 | addr | d7 | d6 | C call site (the ROM's own read) |
 |---|---|---|---|
-| `$0900` HYPSW | **shield/hyperspace P1** | **fire P1** | d7: `objects.c` `twin_game_both_shields()` returns `sd_hw_in1(x)`, caller tests bit 7. d6: `objects.c` `fire_ships_torpedos()` — two `ASL`s put bit 6 in the carry, then `ROR CMBSCORE,X` |
+| `$0900` HYPSW | **shield/hyperspace P1** | **fire P1** | d7: `objects.c` `twin_game_both_shields()` returns `sd_hw_in1(x)`, caller tests bit 7. d6: `objects.c` `fire_ships_torpedos()` — two `ASL`s put bit 6 in the carry, then `ROR LASTSW,X` |
 | `$0901` | shield/fire P2 | | same call sites with x = 1 |
 | `$0902` ROTL | **rotate left P1** | **rotate right P1** | `irq.c`: `sd_hw_in1(2+x) & 0x80` → `IANGLE,X++`; `& 0x40` → `IANGLE,X--` |
 | `$0903` | rotate L/R P2 | | same, x = 1 |
 | `$0904` STRT1 | **thrust P1** | **START** | d7: `objects.c` `move_ship()` `_11` reads `sd_hw_in1(4+x)` and tests N. d6: `mainline.c` `check_for_start_end()` `_17` `BIT STRT1 / BVC` |
-| `$0905` OPTNA1 | thrust P2 | "selling players" jumper (0) | d7: `objects.c` `dorig3()` `_56`. d6: `mainline.c` `_12` (`TEMP2--` when set) |
+| `$0905` OPTNA1 | thrust P2 | "selling players" jumper (0) | d7: `objects.c` `dorig3()` `_56`. d6: `mainline.c` `_12` (`TEMP5--` when set) |
 | `$0906` GAMSEL | **SELECT GAME** | 2-coin-minimum jumper (0) | d7: `mainline.c` `_16` `SAVBOT` debounce (rising edge). d6: `mainline.c` `_80` |
 | `$0907` CABERE | cocktail (0) | caberet (0) | `mainline.c` `uses_temp1_temp11()` (d7) and `nxtstep()` (d6). `0x00` = **upright** |
 
@@ -112,22 +112,63 @@ Routing: **POKEY1 ALLPOT ($1008) = DSW0**, read by `Gtoptn $76DB`
 by `CheckForStartEnd _12` (coinage). That is AAE's `pokey_interface`
 allpot wiring, `{ input_port_1_r, input_port_2_r }`.
 
-Defaults come from the backend unchanged (`plat_dsw_pokey1() = 0x01`,
-`plat_dsw_pokey2() = 0x00`, the MAME/AAE factory settings). The ROM's EOR
-corrections land them on the factory meanings, which is the check that the
-routing is the right way round:
+Both banks are set from `[dips]` in `sd_win.ini` (see `README.md`), by the
+same `dip_pick` backend helper the Asteroids Deluxe port uses: one key per
+switch group, a word from a list, unknown words falling back to the default
+and the accepted spelling written back. The defaults are the factory
+settings and produce `DSW0 = $01`, `DSW1 = $00` — byte-identical to the
+constants the backend returned before the keys existed, so nothing about
+the port's behaviour moved. The ROM's EOR corrections land them on the
+factory meanings, which is the check that the routing is the right way
+round:
 
-- `EASRCE = 0x01 ^ 0x85 = 0x84` → lives `(0x84 & 3) + 3 = 3`; difficulty
+- `OPTN1 = 0x01 ^ 0x85 = 0x84` → lives `(0x84 & 3) + 3 = 3`; difficulty
   `(0x84>>2)&3 = 1` (normal); language `(0x84>>4)&3 = 0` (English); bonus
   index `(0x84>>6)&3 = 2` → `mainline_bonus_optn[2] = $10`. The attract
   screen duly reads **BONUS EVERY 10000**.
 - `ZMINE = 0x00 ^ 0x02 = 0x02` → coin mode 2 = **1 credit per coin**, both
   mech multipliers ×1, bonus-adder off.
 
-**Chosen: real coinage, 1 coin / 1 credit — not free play.** Coins work
+**Default: real coinage, 1 coin / 1 credit — not free play.** Coins work
 (demonstrated), which is the more interesting thing to prove. Free play is
-`plat_dsw_pokey2()` returning `0x02` (`ZMINE & 3 == 0`), which makes
-`CheckForStartEnd` hand out `TEMP8 = 2` every frame.
+`coinage=free_play` (`DSW1 = $02`, so `ZMINE & 3 == 0`), which makes
+`CheckForStartEnd` hand out `DIAGBI = 2` every frame.
+
+### The switch bits, and the driver cross-check
+
+Bit values are the AAE/MAME `bwidow` driver's `INPUT_PORTS_START(spacduel)`
+— the same driver the Gravitar disassembly checks its hardware notes
+against. Every one was re-derived from the ROM tables and agrees:
+
+| bank | mask | option | settings (switch value → meaning) |
+|---|---|---|---|
+| DSW0 | `$03` | lives | `01`→3, `00`→4, `03`→5, `02`→6 &nbsp;(`(OPTN1 & 3) + 3`) |
+| DSW0 | `$0C` | difficulty | `04`→easy, `00`→normal, `0C`→medium, `08`→hard &nbsp;(index into `Fighters`/`SpaceStation` `$7728`) |
+| DSW0 | `$30` | language | `00`→English, `10`→German, `20`→French, `30`→Spanish |
+| DSW0 | `$C0` | bonus life | `C0`→8000, `00`→10000, `40`→15000, `80`→none &nbsp;(index into `Bonus` `$7724` = `00,08,10,15`) |
+| DSW1 | `$03` | coinage | `01`→2C/1P, `00`→1C/1P, `03`→1C/2P, `02`→free play |
+| DSW1 | `$0C` | right mech | `00`→×1, `04`→×4, `08`→×5, `0C`→×6 |
+| DSW1 | `$10` | centre mech | `00`→×1, `10`→×2 |
+| DSW1 | `$E0` | bonus coins | index `DSW1>>5` into `NumberUnitCoinsRequired` `$74CF` = `7F,02,04,04,05,03,7F,7F`; mode 3 grants two |
+
+The difficulty words are the ROM's own: the self-test prints messages
+`$19/$10/$11/$25` = **EASY / NORMAL / MEDIUM / HARD** for switch 0-3
+(`sub_8f43` + `$0D` into `selftest_msg_num`). NORMAL and MEDIUM both give
+`DIFF = 2` in the fighter games and differ only in the space-station ones
+(`Fighters` = `01,02,02,03`, `SpaceStation` = `01,01,02,03`).
+
+**One correction to the driver.** It labels `DSW1 = $80` "6 credits/6
+coins", but that setting is `NumberUnitCoinsRequired[4] = 5` — one bonus
+coin every *five*, i.e. 6 credits for 5 coins. The ini key is
+`6_credits_5_coins`. Every other label matches the ROM exactly.
+
+**Not exposed as switches:** the three cabinet jumpers on `IN1` d6/d7
+(`$0905` sell games/players, `$0906` two-coin minimum, `$0907` d6 caberet
+and d7 cocktail). The driver does not model them either; the backend
+answers 0 for all three, which is the standard upright wiring. Note the
+cocktail bit's polarity: **d7 = 1 is cocktail**, not upright as
+`AS2DEC.MAC`'s equate comment claims — `$690C LDX CABERE / BMI`, commented
+"COCKTAIL?????" / "YEP...NO ADITIONAL FLIP NEEDED", settles it.
 
 ---
 
@@ -349,7 +390,7 @@ start (no `sd_c.nv`):
     SELFTEST: top-of-table score bytes $DE/$ED/$FC/$10B = 05 05 05 05
       attract          600 frames  segs 0..498 avg 299   frame 16.25..17.08 ms avg 16.28 (61.4 fps)
       coin inserted    132 frames  segs 436..622 avg 559  frame 15.38..17.49 ms avg 16.78 (59.6 fps)
-      credits TEMP8 $20: 0 -> 1   CNCT TEMPB $26 = 0   ZMINE $24 = $02
+      credits $$CRDT $20: 0 -> 1   $CNCT $26 = 0   $CMODE $24 = $02
       STRTLOK $43D before select = $80 (bit7 = starts locked)
       STRTLOK after select      = $40, game type $34 = 1
       game started     142 frames  segs 92..625 avg 165   frame 4.61..19.86 ms avg 16.45 (60.8 fps)
@@ -366,7 +407,7 @@ Which answers, in order:
 
 - **attract animates** — segment count varies 0..498 frame to frame (a
   still picture is an explicit FAIL in the script);
-- **a coin registers** — `TEMP8` 0 → 1 with the corrected idle byte;
+- **a coin registers** — `DIAGBI` 0 → 1 with the corrected idle byte;
 - **start begins a game** — after the ROM's own coin → SELECT → START
   sequence, `$35` bit 7 set, the credit spent, lives loaded;
 - **the ship responds** — rotate moves `IANGLE`, thrust builds ship-0's

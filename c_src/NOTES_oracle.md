@@ -65,10 +65,10 @@ instruction-path checksum.
 The coin routine (anonymous entry `L741A`, called from the IRQ at $8660)
 treats IN0 coin bits HIGH as "coin absent" and d3 HIGH as "slam switch off".
 With the oracle's all-zero idle bits, the slam input reads *active*, so the
-pre-coin slam timer (TEMPA) is reloaded to $F0 every IRQ and coin status
+pre-coin slam timer ($0025) is reloaded to $F0 every IRQ and coin status
 cells $2D-$2F are cleared every pass — no credits ever register and attract
 runs forever. This is intended for the attract scenario, but it means
-**TEMPA/$2A-$2F contents in the reference RAM dumps reflect "slam held
+**$0025/$2A-$2F contents in the reference RAM dumps reflect "slam held
 active"**, not an idle cabinet. A future coin scenario must first raise
 d3|d1|d0 (`("in0_set", 0x0B)`) and then pulse a coin bit low.
 

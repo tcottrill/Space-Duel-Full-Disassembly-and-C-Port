@@ -2,9 +2,9 @@
  *
  * The sound engine is a 16-channel script player driven once per IRQ:
  *
- *   g.ram[$56+ch]  script pointer   (0 = channel idle; $56 = YINCL, and the
- *                                    named cells TOGGLE $58, TOGDRONE $5A,
- *                                    TOGCOMB $5B ... are channels 2,4,5 ...
+ *   g.ram[$56+ch]  script pointer   (0 = channel idle; $56 = POINT, and the
+ *                                    named cells $0058 $58, $005A $5A,
+ *                                    $005B $5B ... are channels 2,4,5 ...
  *                                    of this array)
  *   g.ram[$66+ch]  current register value (AUDF for even ch, AUDC for odd)
  *   g.ram[$76+ch]  steps left in the current script entry
@@ -46,12 +46,12 @@ void always_remains_same_both(void)
     g.ram[0xB7] = 0x41;                  /* L7041: activate other saucer    */
     a = g.ram[0x33F];                    /* L7045 OBJXL+$1F                 */
     g.ram[0x340] = a;                    /* L7048 OBJXL+$20                 */
-    YTOP = a;                            /* L704B save A                    */
+    TEMP9 = a;                            /* L704B save A                    */
     y = g.ram[0x2D4];                    /* L704D OBJXH+$1F                 */
     g.ram[0x2D5] = y;                    /* L7050 OBJXH+$20                 */
     /* L7053 TXA/PHA ... L7080 PLA/TAX: caller X preserved, register only  */
     for (i = 3; i >= 0; i--) {           /* L7055 LDX #$03                  */
-        g.ram[0x344 + i] = YTOP;         /* L7057/59: shells OBJXL+$24..$27 */
+        g.ram[0x344 + i] = TEMP9;         /* L7057/59: shells OBJXL+$24..$27 */
         g.ram[0x2D9 + i] = y;            /* L705C/5D: shells OBJXH+$24..$27 */
     }
     d = SUPRDIS;                         /* L7063 CLC / L7064 LDA / TAX     */
@@ -103,8 +103,8 @@ void l2_saucers(void)
  * RANDOM draw, fire the fuse sound of whichever rigid-pair ship is still
  * alive.  The RANDOM read happens on EVERY call (LFSR-visible).  x_in /
  * y_in are the caller's live 6502 X/Y, passed through to the FusePlyr
- * trigger's TEMP5/TEMP6 parking (Drawrod calls with X = XCOMP, Y = the
- * POKRAN leftover it also hands Explosion). */
+ * trigger's TEMPA/TEMPB parking (Drawrod calls with X = TEMP3, Y = the
+ * TEMP2 leftover it also hands Explosion). */
 void random_fuzz(uint8_t x_in, uint8_t y_in)
 {
     if ((sd_hw_pokey_random(0) & 0x07) != 0)    /* L6B45/48 LDA $100A/AND  */
@@ -120,10 +120,10 @@ void random_fuzz(uint8_t x_in, uint8_t y_in)
 void stop_fuse_sound(void)
 {
     sd_sample_fuse_stop();                      /* host sample seam        */
-    YINCL = 0x00;                               /* L6B59: channel 0 ($56)  */
+    POINT = 0x00;                               /* L6B59: channel 0 ($56)  */
     g.ram[0x57] = 0x00;                         /* L6B5B: channel 1        */
-    SCRFUL = 0x00;                              /* L6B5D: channel 6 ($5C)  */
-    KLMOFF = 0x00;                              /* L6B5F: channel 7 ($5D)  */
+    (g.ram[0x005C]) = 0x00;                              /* L6B5D: channel 6 ($5C)  */
+    (g.ram[0x005D]) = 0x00;                              /* L6B5F: channel 7 ($5D)  */
     sd_hw_pokey_write(0, 0x01, 0x00);           /* L6B61 STA $1001 (AUDC1) */
     sd_hw_pokey_write(0, 0x07, 0x00);           /* L6B64 STA $1007 (AUDC4) */
 }
@@ -149,7 +149,7 @@ void gates(uint8_t x_in, uint8_t y_in)        { high_score_tune(0xAF, x_in, y_in
 
 /* HighScoreTune ($72F1): sounds play in game, or any time while the
  * high-score tune is up; in plain attract mode this is a pure no-op
- * (no RAM touched at all - the early-out skips Badhab's TEMP5/6 parks). */
+ * (no RAM touched at all - the early-out skips Badhab's TEMPA/6 parks). */
 void high_score_tune(uint8_t code, uint8_t x_in, uint8_t y_in)
 {
     if (!(HSCFLG & 0x80)) {              /* L72F1 BIT HSCFLG / BMI Badhab   */
@@ -171,20 +171,20 @@ void badhab(uint8_t code, uint8_t x_in, uint8_t y_in)
     int x;
 
     sd_sample_trigger(code);             /* host sample seam (samples.c)    */
-    TEMP5 = x_in;                        /* L72FA STX TEMP5 (caller's X)    */
-    TEMP6 = y_in;                        /* L72FC STY TEMP6 (caller's Y)    */
+    TEMPA = x_in;                        /* L72FA STX TEMPA (caller's X)    */
+    TEMPB = y_in;                        /* L72FC STY TEMPB (caller's Y)    */
     y = code;                            /* L72FE TAY                       */
     for (x = 0x0F; x >= 0; x--, y--) {   /* L72FF LDX #$0F ... L7316 BPL    */
         uint8_t p = SNDROM(0x70C1 + y);  /* L7301                           */
         if (p != 0) {
             g.ram[0x96] = (uint8_t)x;    /* L7306: interlock this channel   */
-            g.ram[0x56 + x] = p;         /* L7308: script pointer (YINCL,X) */
+            g.ram[0x56 + x] = p;         /* L7308: script pointer (POINT,X) */
             g.ram[0x86 + x] = 0x01;      /* L730C: dummy tick count         */
             g.ram[0x76 + x] = 0x01;      /* L730E: dummy step count         */
             g.ram[0x96] = 0xFF;          /* L7312: interlock off            */
         }
     }
-    /* L7318 LDX TEMP5 / L731A LDY TEMP6: register restore only            */
+    /* L7318 LDX TEMPA / L731A LDY TEMPB: register restore only            */
 }
 
 /* ------------------------------------------------------------------ */
@@ -203,7 +203,7 @@ static void yes_start_value(int x)
         uint8_t p, fc;
         uint16_t base;
 
-        p = (uint8_t)(g.ram[0x56 + x] + 2);  /* L732F/31 INC YINCL,X twice  */
+        p = (uint8_t)(g.ram[0x56 + x] + 2);  /* L732F/31 INC POINT,X twice  */
         g.ram[0x56 + x] = p;
         base = (uint16_t)(0x719B + ((uint16_t)p << 1)); /* L7335 ASL / TAY  */
         g.ram[0x66 + x] = SNDROM(base);      /* L7339/49: new value         */
@@ -234,7 +234,7 @@ void continue_sounds(void)
     for (x = 0x0F; x >= 0; x--) {        /* L731D LDX #$0F; L73A1 DEX/BMI   */
         uint8_t ptr, v;
 
-        ptr = g.ram[0x56 + x];           /* L731F LDA YINCL,X               */
+        ptr = g.ram[0x56 + x];           /* L731F LDA POINT,X               */
         if (ptr == 0)                    /* BEQ L73A1: channel idle         */
             continue;
         if ((uint8_t)x == g.ram[0x96])   /* L7323 CPX $96: being built      */
@@ -290,7 +290,7 @@ void inisou(void)
     for (x = 7; x >= 0; x--) {           /* L73B8 LDX #$07 ... L73C7 BPL    */
         sd_hw_pokey_write(0, (uint8_t)x, 0x00);  /* L73BC STA POKEY,X       */
         sd_hw_pokey_write(1, (uint8_t)x, 0x00);  /* L73BF STA POKEY2,X      */
-        g.ram[0x56 + x] = 0;             /* L73C2 STA YINCL,X (script ptr)  */
+        g.ram[0x56 + x] = 0;             /* L73C2 STA POINT,X (script ptr)  */
         g.ram[0x66 + x] = 0;             /* L73C4 STA $66,X (channel value) */
     }
     sd_hw_pokey_write(0, 0x08, 0x00);    /* L73CB STA $1008 (AUDCTL1)       */
@@ -307,7 +307,7 @@ void inisou(void)
  * divider = rising pitch - and AUDF2/AUDC2 get SFREQ/$A3. When idle:
  * AUDF2/AUDC2/AUDCTL and SFREQ are cleared. Either way the same tone is
  * echoed on POKEY1 AUDF3/AUDC3 (value+1 / tone), unless sound channel 4
- * ($5A = TOGDRONE, POKEY1 AUDF3's script cell) is in use. */
+ * ($5A = $005A, POKEY1 AUDF3's script cell) is in use. */
 void force_field_up(void)
 {
     uint8_t a, xreg;
@@ -335,7 +335,7 @@ void force_field_up(void)
         sd_hw_pokey_write(1, 0x03, xreg);/* L7409 STX $1403 (AUDC2)         */
     }
     /* ForceFieldUp_25 ($740C)                                              */
-    if (g.ram[0x5A] != 0)                /* L740C LDY TOGDRONE: chan 4 busy */
+    if (g.ram[0x5A] != 0)                /* L740C LDY $005A: chan 4 busy */
         return;                          /* L740E BNE _40 (rts)             */
     a = (uint8_t)(a + 1);                /* L7410 CLC / ADC #$01            */
     sd_hw_pokey_write(0, 0x04, a);       /* L7413 STA $1004 (AUDF3)         */

@@ -66,7 +66,7 @@ void sd_wait_3khz(uint8_t n);
 void sd_hw_reset(void);
 /* Mid-pass IRQ sync points.  On real hardware the ~4 IRQs of a mainline
  * pass fire spread through it, so routines that read a per-IRQ cell
- * ($44, TOTOBJ, SECOND, SANGLE/IANGLE) see a value that depends on WHERE
+ * ($44, INTRPT, SECOND, SANGLE/IANGLE) see a value that depends on WHERE
  * in the pass they run.  A probe that services a pass's IRQs only at the
  * frame gate makes every mid-pass read see the same (stale) value.
  * sd_hw_irq_mark(point) lets a probe advance machine time to the oracle's

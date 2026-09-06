@@ -17,7 +17,7 @@ them involves the watchdog:
 |---|---|---|
 | SELF TEST switch closed while the game runs | `Start2` checks IN0 d4 every frame (`$4015 LDA HALT / AND #$10`) and `JMP AllStopPlease` ($8A1D): the **bookkeeping screen** | no — a plain jump; RAM survives (that is how the screen can show the game just played) |
 | SELF TEST switch closed at power-up | `Poweron $8086` checks d4 and `JMP BeginningPattern` ($8110): RAM marches, ROM checksums, POKEY/EAROM checks, then `MainLineDiagLoop` ($8590), the **six diagnostic screens** | no — it *is* the reset code |
-| switch opened on the bookkeeping screen | `$8C1D`: clear `$44/$45/NROCKS/SAUMIN`, `JMP Pwron` ($68CA, the warm start) | no |
+| switch opened on the bookkeeping screen | `$8C1D`: clear `$44/$45/NROCKS/ATSTG`, `JMP Pwron` ($68CA, the warm start) | no |
 | switch opened in the diagnostics | `$860E` → `WatchDogResetExit $8618: BNE $8618` — a deliberate spin with **no `STA $0D00`** in it, so the board's watchdog times out and resets the CPU, which now boots the game | **yes, the hardware watchdog** — the only watchdog reset in test mode |
 | START + SELECT on the bookkeeping screen with option 0 showing | `OptionSelected $8CA6` RTS-jumps through `DoSelfTest $8C9E`; entry 0 is `$803E` → **`$803F`, the RESET vector**, i.e. a software jump to the reset code. With the switch still closed it lands in the full diagnostics — the operator's way from the bookkeeping screen to the diagnostic screens without a power cycle | a *software* restart, not the watchdog |
 
@@ -75,7 +75,7 @@ Two seam calls were added to sd_hw.h for the loops' hardware waits:
   the generator prints them and the headless run checks them.
 - **Register protocols derived, not guessed.** The three POKEY POTGO strobes
   in `CenterBeam`/`Optn2` store "whatever A holds"; tracing `SaveCFlag` and
-  `AddY1ToVector` shows that is always the list pointer's low byte (BLUE), so
+  `AddY1ToVector` shows that is always the list pointer's low byte (VGLIST), so
   that is what is written. The two `SetVectorGeneratorScale` calls in `St2`
   take Y from the previous routine: 3 after `UpdownVectorUpsideDown`
   (`AddVectorToVector` exits through `AddY1ToVector` with Y = 3), 1 after
@@ -94,9 +94,9 @@ Two seam calls were added to sd_hw.h for the loops' hardware waits:
   archive) labels it "IF SELF TEST SWITCH IS TURNED OFF, EXIT". On this
   board the BRK vector is the IRQ handler ($FFFE = `$8639`), which has no
   B-flag check: it runs and RTIs to `$8D58` — the `$00` operand of
-  `LDA #$00` — a second BRK, whose RTI lands on `$8D5A STA BLACK` with
+  `LDA #$00` — a second BRK, whose RTI lands on `$8D5A STA VGBRIT` with
   A = $10. So on the real PCB the switch-off path is
-  two IRQ services and BLACK = $10 (which, after the three `ROL BLACK`, makes
+  two IRQ services and VGBRIT = $10 (which, after the three `ROL VGBRIT`, makes
   the pattern index $80|jumpers and the table reads run off the end of the
   tables into the following code bytes — read from `sd_progrom` exactly as
   the ROM would). The mode never exits; Atari's intent did not survive the
@@ -112,7 +112,7 @@ the oracle's, not a copy):
 
 | scenario | frames | what it covers | result |
 |---|---|---|---|
-| `selftest` | 440 | attract → switch on (frame 100) → bookkeeping; SELECT ×4 through the options; START+SELECT on option 0 → **software reset** → power-on diagnostics with the switch still on; a shield+fire closure shown on the switch line; DIAG STEP through all six screens (OBJ 2→4→6→8→$A→wrap to 2); SELECT on the crosshatch (color switch) | **122/122** byte-identical |
+| `selftest` | 440 | attract → switch on (frame 100) → bookkeeping; SELECT ×4 through the options; START+SELECT on option 0 → **software reset** → power-on diagnostics with the switch still on; a shield+fire closure shown on the switch line; DIAG STEP through all six screens ($00A0 2→4→6→8→$A→wrap to 2); SELECT on the crosshatch (color switch) | **122/122** byte-identical |
 | `selftest_exit` | 180 | attract → switch on (60) → bookkeeping → switch off (120) → `Pwron` → attract | **57/57** |
 | `selftest_boot` | 260 | switch on at RESET (coins idle high): the marches from cold, checksums, POKEY RANDOM (the 4 reads the oracle counts), EAROM, all six screens | **77/77** |
 
@@ -129,8 +129,8 @@ lists them):
   rotate IANGLE by `$44`'s old bits; replaying them after it left
   `IANGLE/SANGLE` two counts off.
 - point 5, `$803F` (the restart): IRQs the oracle took between the VGGO and
-  the restart decremented a TOTOBJ the restart then wiped; replaying them
-  after the wipe left `TOTOBJ/$33` four counts off.
+  the restart decremented a INTRPT the restart then wiped; replaying them
+  after the wipe left `INTRPT/$33` four counts off.
 
 Both were 2-4 byte, single-cause diffs that the probe reported and the marks
 removed; nothing in `selftest.c` changed for them. The first probe run

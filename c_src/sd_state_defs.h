@@ -39,479 +39,477 @@
 #define A_Pokey2       0x1400  /* POKEY 2 - sound and option switches. */
 
 /* ---- CPU RAM $0000-$03FF (zp + stack + game RAM) ---- */
-#define A_BLACK        0x0000
-#define BLACK          (g.ram[A_BLACK])
-#define A_BLUE         0x0001
-#define BLUE           (g.ram[A_BLUE])
-#define A_EAC2         0x0002
-#define EAC2           (g.ram[A_EAC2])
-#define A_CHAN2V       0x0003
-#define CHAN2V         (g.ram[A_CHAN2V])
-#define A_RED          0x0004
-#define RED            (g.ram[A_RED])
-#define A_CHAN3V       0x0005
-#define CHAN3V         (g.ram[A_CHAN3V])
-#define A_TWOPI        0x0006
-#define TWOPI          (g.ram[A_TWOPI])
-#define A_WHITE        0x0007
-#define WHITE          (g.ram[A_WHITE])
-#define A_EACE         0x0008
-#define EACE           (g.ram[A_EACE])
-#define A_VGBRIT       0x0009
+#define A_VGBRIT       0x0000  /* Vector brightness used by VGSTAT: 0 = off, $F0 = maximum, in steps of $20. */
 #define VGBRIT         (g.ram[A_VGBRIT])
-#define A_POKRAN       0x000A
-#define POKRAN         (g.ram[A_POKRAN])
-#define A_POTGO        0x000B
-#define POTGO          (g.ram[A_POTGO])
-#define A_XCOMP        0x000C
+#define A_VGLIST       0x0001  /* AVG display-list write pointer, 2 bytes; Add2WordsToVector stores through it with STA (VGLIST),Y. */
+#define VGLIST         (g.ram[A_VGLIST])
+#define A_EAC2         0x0002  /* VGLIST+1, the high byte of the display-list write pointer. EAC2 is AS2DEC's EAROM C2 control bit. */
+#define EAC2           (g.ram[A_EAC2])
+#define A_XCOMP        0x0003  /* X component scratch for the vector builders, 4 bytes ($03-$06). */
 #define XCOMP          (g.ram[A_XCOMP])
-#define A_FOURPI       0x000D
-#define FOURPI         (g.ram[A_FOURPI])
-#define A_SKCTL        0x000F
-#define SKCTL          (g.ram[A_SKCTL])
-#define A_TEMP1        0x0010
+#define A_RED          0x0004  /* XCOMP+1. RED is the colour constant 4. */
+#define RED            (g.ram[A_RED])
+#define A_CHAN3V       0x0005  /* XCOMP+2. CHAN3V is the POKEY channel 3 volume register offset. */
+#define CHAN3V         (g.ram[A_CHAN3V])
+#define A_TWOPI        0x0006  /* XCOMP+3. TWOPI is the angle-table constant 6. */
+#define TWOPI          (g.ram[A_TWOPI])
+#define A_TEMP1        0x0007  /* General scratch, 3 bytes ($07-$09); the self-test uses all three. TEMP1C is TEMP1+2. */
 #define TEMP1          (g.ram[A_TEMP1])
-#define A_NMROCK       0x0011
-#define NMROCK         (g.ram[A_NMROCK])
-#define A_TEMP2        0x0013
+#define A_EACE         0x0008  /* TEMP1+1. EACE is the EAROM chip-enable bit, 8. */
+#define EACE           (g.ram[A_EACE])
+#define A_TEMP2        0x000A  /* General scratch, 2 bytes ($0A-$0B). */
 #define TEMP2          (g.ram[A_TEMP2])
-#define A_NOBJ         0x0015
-#define NOBJ           (g.ram[A_NOBJ])
-#define A_YTOP         0x0018
-#define YTOP           (g.ram[A_YTOP])
-#define A_TEMP4        0x0019
+#define A_POTGO        0x000B  /* TEMP2+1. POTGO is the POKEY pot-scan register offset $0B. */
+#define POTGO          (g.ram[A_POTGO])
+#define A_TEMP3        0x000C  /* General scratch, 4 bytes ($0C-$0F); by convention TEMP3 holds X and TEMP3+1 holds Y. TEMP3C is +2, TEMP3D is +3. */
+#define TEMP3          (g.ram[A_TEMP3])
+#define A_FOURPI       0x000D  /* TEMP3+1. FOURPI is the angle-table constant 13 decimal. */
+#define FOURPI         (g.ram[A_FOURPI])
+#define A_SKCTL        0x000F  /* TEMP3+3. SKCTL is the POKEY serial-control register offset $0F. */
+#define SKCTL          (g.ram[A_SKCTL])
+#define A_TEMP4        0x0010  /* General scratch, 3 bytes ($10-$12). */
 #define TEMP4          (g.ram[A_TEMP4])
-#define A_TEMP5        0x001C
+#define A_NMROCK       0x0011  /* TEMP4+1. NMROCKS is the asteroid slot count, 17 decimal. */
+#define NMROCK         (g.ram[A_NMROCK])
+#define A_TEMP5        0x0013  /* General scratch byte. */
 #define TEMP5          (g.ram[A_TEMP5])
-#define A_TEMP6        0x001D
+#define A_TEMP6        0x0014  /* General scratch byte. */
 #define TEMP6          (g.ram[A_TEMP6])
-#define A_TEMP7        0x001E
+#define A_TEMP7        0x0015  /* General scratch byte. */
 #define TEMP7          (g.ram[A_TEMP7])
-#define A_TEMP7B       0x001F
+#define A_TEMP7B       0x0016  /* General scratch byte, paired with TEMP7. */
 #define TEMP7B         (g.ram[A_TEMP7B])
-#define A_TEMP8        0x0020
+#define A_TEMP8        0x0017  /* General scratch byte. */
 #define TEMP8          (g.ram[A_TEMP8])
-#define A_TEMP9        0x0021
+#define A_TEMP9        0x0018  /* General scratch byte. */
 #define TEMP9          (g.ram[A_TEMP9])
-#define A_TEMP10       0x0022
+#define A_TEMP10       0x0019  /* General scratch byte. */
 #define TEMP10         (g.ram[A_TEMP10])
-#define A_ZPAIR        0x0023
-#define ZPAIR          (g.ram[A_ZPAIR])
-#define A_ZMINE        0x0024
-#define ZMINE          (g.ram[A_ZMINE])
-#define A_TEMPA        0x0025
+#define A_TEMP11       0x001A  /* General scratch byte. */
+#define TEMP11         (g.ram[A_TEMP11])
+#define A_TEMP12       0x001B  /* General scratch byte. */
+#define TEMP12         (g.ram[A_TEMP12])
+#define A_TEMPA        0x001C  /* General scratch byte. */
 #define TEMPA          (g.ram[A_TEMPA])
-#define A_TEMPB        0x0026
+#define A_TEMPB        0x001D  /* General scratch byte. */
 #define TEMPB          (g.ram[A_TEMPB])
-#define A_TEMPC        0x0027
+#define A_TEMPC        0x001E  /* General scratch byte. */
 #define TEMPC          (g.ram[A_TEMPC])
-#define A_ROTENG       0x0028
+#define A_ZSAUCE       0x001F  /* $TCMFLG, the two-coin-minimum flag (COIN65.MAC). ZSAUCER is the saucer's index in the object arrays. */
+#define ZSAUCE         (g.ram[A_ZSAUCE])
+#define A_DIAGBI       0x0020  /* $$CRDT, the credit total (COIN65.MAC). DIAGBIT is the diagnostic-step bit $20 in In0. */
+#define DIAGBI         (g.ram[A_DIAGBI])
+#define A_ZSHIP        0x0021  /* $INTCT, the coin routine's interrupt counter. ZSHIP is the first ship's object index. */
+#define ZSHIP          (g.ram[A_ZSHIP])
+#define A_ZPAIR        0x0023  /* $BC, bonus coins earned. ZPAIR is the bound pair's object index. */
+#define ZPAIR          (g.ram[A_ZPAIR])
+#define A_ZMINE        0x0024  /* $CMODE, the coin mode. ZMINES is the first mine's object index. */
+#define ZMINE          (g.ram[A_ZMINE])
+#define A_ROTENG       0x0028  /* $CCTIM+1, the coin-counter timers (3 bytes from $27). ROTENG is the rotational-energy constant, 40 decimal. */
 #define ROTENG         (g.ram[A_ROTENG])
-#define A_ZP1MIN       0x002C
+#define A_ZP1MIN       0x002C  /* $PSTSL+2, the post-coin slam timers (3 bytes from $2A). ZP1MINES is player 1's first torpedo index. */
 #define ZP1MIN         (g.ram[A_ZP1MIN])
-#define A_ZLAST        0x002F
+#define A_ZLAST        0x002F  /* $CNSTT+2, the coin status and timers (3 bytes from $2D). ZLAST is the last object index. */
 #define ZLAST          (g.ram[A_ZLAST])
-#define A_LANGBT       0x0030
+#define A_LANGBT       0x0030  /* $USE, positive while the coin routine is running. LANGBTS is the language bit mask $30 in OPTN1. */
 #define LANGBT         (g.ram[A_LANGBT])
-#define A_TOTOBJ       0x0032
-#define TOTOBJ         (g.ram[A_TOTOBJ])
-#define A_INTRPT       0x003B
+#define A_INTRPT       0x0032  /* Coin-routine scratch. Beware: elsewhere the ROM reads INTRPT,X purely as SCORE+1,X - see NOTES_score.md. */
 #define INTRPT         (g.ram[A_INTRPT])
-#define A_SYNC         0x003C
+#define A_SYNC         0x0033  /* Coin-routine scratch. Beware: elsewhere the ROM reads SYNC,X purely as SCORE+2,X. */
 #define SYNC           (g.ram[A_SYNC])
-#define A_GAME         0x003D
+#define A_GAME         0x0034  /* Selected game variation, 0-3 internally, one less than the number shown on screen. MAXGAME is 3, ALONEGAME 1 (one ship), TWINGAME 3 (space station, one player drives both). */
 #define GAME           (g.ram[A_GAME])
-#define A_ATRACT       0x003E
+#define A_ATRACT       0x0035  /* Positive while a game is running, zero in attract mode. Also SAVTOP: RAM from here up need not survive between games. */
 #define ATRACT         (g.ram[A_ATRACT])
-#define A_MAXSPE       0x003F
-#define MAXSPE         (g.ram[A_MAXSPE])
-#define A_EAWRIT       0x0040
-#define EAWRIT         (g.ram[A_EAWRIT])
-#define A_UPDFLG       0x0041
+#define A_UPDINT       0x0036  /* Which initial, 0 1 or 2, is being selected; 2 bytes, one per player. */
+#define UPDINT         (g.ram[A_UPDINT])
+#define A_UPDFLG       0x0038  /* Positive when this player has set a new high score; 2 bytes, one per player. */
 #define UPDFLG         (g.ram[A_UPDFLG])
-#define A_SCORE        0x0043
+#define A_SCORE        0x003A  /* Player scores in BCD, 3 bytes each (low, middle, high) for players 0 and 1, so $3A-$3F. */
 #define SCORE          (g.ram[A_SCORE])
-#define A_CMBSCORE     0x0049
+#define A_MAXSPE       0x003F  /* SCORE+5, the high byte of player 1's score. MAXSPEED is the velocity clamp $3F. */
+#define MAXSPE         (g.ram[A_MAXSPE])
+#define A_CMBSCORE     0x0040  /* Combined score for the cooperative games, 3 bytes BCD; the score block $3A-$42 is staged as a unit before UpdateHighScoreTable. */
 #define CMBSCORE       (g.ram[A_CMBSCORE])
-#define A_GENDING      0x004C
+#define A_GENDING      0x0043  /* Delay before the game ends when non-zero, counting up towards zero. IGENDING ($40) is the initial value. */
 #define GENDING        (g.ram[A_GENDING])
-#define A_FRAME        0x004D
+#define A_FRAME        0x0044  /* Free-running frame counter, 3 bytes. */
 #define FRAME          (g.ram[A_FRAME])
-#define A_HITS         0x0050
+#define A_HITS         0x0047  /* Lives remaining, one byte per player; zero in attract mode. */
 #define HITS           (g.ram[A_HITS])
-#define A_LASTSW       0x0052
+#define A_LASTSW       0x0049  /* Last control-switch reading, one byte per ship. */
 #define LASTSW         (g.ram[A_LASTSW])
-#define A_XINCL        0x0054
+#define A_XINCL        0x004B  /* Low byte of each ship's X velocity, one per ship; the high byte is XINC+ZSHIP. */
 #define XINCL          (g.ram[A_XINCL])
-#define A_YINCL        0x0056
+#define A_YINCL        0x004D  /* Low byte of each ship's Y velocity, one per ship. */
 #define YINCL          (g.ram[A_YINCL])
-#define A_TOGGLE       0x0058
+#define A_TOGGLE       0x004F  /* Per-ship toggle flags; D7 (SHLDON, $80) means the shield is up. */
 #define TOGGLE         (g.ram[A_TOGGLE])
-#define A_TOGDRONE     0x005A
+#define A_TOGDRONE     0x0051  /* D7 set when the second ship is a computer-flown drone. */
 #define TOGDRONE       (g.ram[A_TOGDRONE])
-#define A_TOGCOMB      0x005B
+#define A_TOGCOMB      0x0052  /* D7 set when the two players draw on one shared pool of lives. */
 #define TOGCOMB        (g.ram[A_TOGCOMB])
-#define A_SCRFUL       0x005C
+#define A_SCRFUL       0x0053  /* D7 set when the screen already holds the maximum number of objects. */
 #define SCRFUL         (g.ram[A_SCRFUL])
-#define A_KLMOFF       0x005D
+#define A_KLMOFF       0x0054  /* D7 = killer mines are to leave the screen, D6 = comets are to leave. */
 #define KLMOFF         (g.ram[A_KLMOFF])
-#define A_TSTBYTE      0x005E
+#define A_TSTBYTE      0x0055  /* Guard byte, there to catch ENMOFF being clobbered from above. */
 #define TSTBYTE        (g.ram[A_TSTBYTE])
-#define A_POINT        0x005F
+#define A_POINT        0x0056  /* Sound engine: per-channel offset into the sound data tables, 16 channels; 0 means the channel is idle. */
 #define POINT          (g.ram[A_POINT])
-#define A_MXSPKT       0x0060
+#define A_MXSPKT       0x0060  /* POINT+10, sound channel 10's table pointer. MXSPKTIME is the spark-timer maximum $60. */
 #define MXSPKT         (g.ram[A_MXSPKT])
-#define A_CURRENT      0x006F
+#define A_CURRENT      0x0066  /* Sound engine: the value currently being output on each of the 16 channels. */
 #define CURRENT        (g.ram[A_CURRENT])
-#define A_COUNT        0x007F
+#define A_COUNT        0x0076  /* Sound engine: changes remaining in the current step, 16 channels. */
 #define COUNT          (g.ram[A_COUNT])
-#define A_COCKBI       0x0080
+#define A_COCKBI       0x0080  /* COUNT+10. COCKBIT is the cocktail-cabinet bit $80 read at CABERE ($0907). */
 #define COCKBI         (g.ram[A_COCKBI])
-#define A_FRAMES       0x008F
+#define A_FRAMES       0x0086  /* Sound engine: frames until this channel's next change, 16 channels. */
 #define FRAMES         (g.ram[A_FRAMES])
-#define A_SINDEX       0x009F
+#define A_SINDEX       0x0096  /* Sound engine: index of the channel INISOU and MODSND are currently servicing. */
 #define SINDEX         (g.ram[A_SINDEX])
-#define A_OBJ          0x00A0
+#define A_OBJ          0x0097  /* Object table, 17 asteroid and explosion slots. 0 = slot free; otherwise bits 0-2 give the size (1 small, 2 medium, 4 large) and bits 3-6 the picture number. */
 #define OBJ            (g.ram[A_OBJ])
-#define A_OBCOMETS     0x00B1
+#define A_OBCOMETS     0x00A8  /* Object table continues: 8 comet and dwarf slots. */
 #define OBCOMETS       (g.ram[A_OBCOMETS])
-#define A_OBKLMINES    0x00B9
+#define A_OBKLMINES    0x00B0  /* Object table: 6 killer-mine slots. */
 #define OBKLMINES      (g.ram[A_OBKLMINES])
-#define A_OBSAUCER     0x00BF
+#define A_OBSAUCER     0x00B6  /* Object table: 2 saucer slots. */
 #define OBSAUCER       (g.ram[A_OBSAUCER])
-#define A_OBSHIP       0x00C1
+#define A_OBSHIP       0x00B8  /* Object table: 2 player-ship slots; SHPALIVE (2) marks a live ship. */
 #define OBSHIP         (g.ram[A_OBSHIP])
-#define A_OBPAIR       0x00C3
+#define A_OBPAIR       0x00BA  /* Object table: the single bound-pair slot, the rotating bar of the space-station games. */
 #define OBPAIR         (g.ram[A_OBPAIR])
-#define A_OBMINES      0x00C4
+#define A_OBMINES      0x00BB  /* Object table: shots start here, with 4 computer mines (OBCOMINES names the same cell). */
 #define OBMINES        (g.ram[A_OBMINES])
-#define A_OBP0MINES    0x00C8
+#define A_OBP0MINES    0x00BF  /* Object table: player 0's 4 torpedoes. */
 #define OBP0MINES      (g.ram[A_OBP0MINES])
-#define A_OBP1MINES    0x00CC
+#define A_OBP1MINES    0x00C3  /* Object table: player 1's 4 torpedoes. */
 #define OBP1MINES      (g.ram[A_OBP1MINES])
-#define A_EASRCE       0x00D0
+#define A_EASRCE       0x00C7  /* EAROM transfer source pointer, 2 bytes. */
 #define EASRCE         (g.ram[A_EASRCE])
-#define A_KLMINC       0x00D2
+#define A_KLMINC       0x00C9  /* Killer-mine colour, which is the number of shots absorbed so far minus one; 6 mines. */
 #define KLMINC         (g.ram[A_KLMINC])
-#define A_DIFCTY       0x00D8
+#define A_DIFCTY       0x00CF  /* Difficulty value governing how soon saucers start. */
 #define DIFCTY         (g.ram[A_DIFCTY])
-#define A_OPTN1        0x00D9
+#define A_OPTN1        0x00D0  /* Option switches read from POKEY 1: D7-D6 bonus level, D5-D4 language, D3-D2 difficulty, D1-D0 lives. */
 #define OPTN1          (g.ram[A_OPTN1])
-#define A_LANG         0x00DA
+#define A_LANG         0x00D1  /* Selected language, taken from OPTN1 bits D5-D4. */
 #define LANG           (g.ram[A_LANG])
-#define A_DIFF         0x00DB
+#define A_DIFF         0x00D2  /* Difficulty level, taken from the option switches. */
 #define DIFF           (g.ram[A_DIFF])
-#define A_SAUMIN       0x00DC
+#define A_SAUMIN       0x00D3  /* Minimum velocity of each saucer, one byte per saucer. Note $D3-$D5 are also read as HSCORE-3 by the high-score shift-down. */
 #define SAUMIN         (g.ram[A_SAUMIN])
-#define A_ROCKMIN      0x00DE
+#define A_ROCKMIN      0x00D5  /* Minimum rock velocity, 2 bytes (plus and minus). */
 #define ROCKMIN        (g.ram[A_ROCKMIN])
-#define A_ROCKMAX      0x00E0
+#define A_ROCKMAX      0x00D7  /* Maximum rock velocity, 2 bytes. SAVZTOP, the end of the must-be-preserved block, follows at $D9. */
 #define ROCKMAX        (g.ram[A_ROCKMAX])
-#define A_NXTBON       0x00E2
+#define A_NXTBON       0x00D9  /* Score at which the next bonus life falls due, 2 bytes. Also SAVZTOP. */
 #define NXTBON         (g.ram[A_NXTBON])
-#define A_BONLVA       0x00E4
+#define A_BONLVA       0x00DB  /* Bonus level amount: the score step between bonus lives. */
 #define BONLVA         (g.ram[A_BONLVA])
-#define A_ATSTG        0x00E5
+#define A_ATSTG        0x00DC  /* Attract-mode stage flag. */
 #define ATSTG          (g.ram[A_ATSTG])
-#define A_HSCORE       0x00E6
+#define A_HSCORE       0x00DD  /* High score table: 3 BCD bytes x 5 entries x 4 game variants, 60 bytes ($DD-$118). */
 #define HSCORE         (g.ram[A_HSCORE])
-#define A_BGSHEN       0x00F0
+#define A_BGSHEN       0x00F0  /* HSCORE+$13. BGSHENG is the full-shield energy value $F0. */
 #define BGSHEN         (g.ram[A_BGSHEN])
-#define A_INITL        0x0122
+#define A_INITL        0x0119  /* Initials for the high score table: 3 characters x 5 entries x 4 variants, 60 bytes ($119-$154). */
 #define INITL          (g.ram[A_INITL])
-#define A_SPINT        0x015E
+#define A_SPINT        0x0155  /* Extra initials for the two-player space-station game, 3 x 5 = 15 bytes. */
 #define SPINT          (g.ram[A_SPINT])
-#define A_EABUF        0x016D
+#define A_EABUF        0x0164  /* EAROM read and write staging buffer, 32 bytes ($164-$183). */
 #define EABUF          (g.ram[A_EABUF])
-#define A_EAZFLG       0x018D
+#define A_EAZFLG       0x0184  /* Non-zero asks the EAROM handler to zero the whole device. */
 #define EAZFLG         (g.ram[A_EAZFLG])
-#define A_EAREQU       0x018E
+#define A_EAREQU       0x0185  /* EAROM access request bitmap, one bit per batch of data: D0 is batch 0 through D7 batch 7; a set bit requests that batch. */
 #define EAREQU         (g.ram[A_EAREQU])
-#define A_EARWRQ       0x018F
+#define A_EARWRQ       0x0186  /* Access type for each bit of EAREQU: 0 = read, 1 = write. */
 #define EARWRQ         (g.ram[A_EARWRQ])
-#define A_EABAD        0x0190
+#define A_EABAD        0x0187  /* Per-batch outcome, matching EAREQU bit for bit: 0 = success, 1 = failure. */
 #define EABAD          (g.ram[A_EABAD])
-#define A_EAFLG        0x0191
+#define A_EAFLG        0x0188  /* Control byte for one EAROM operation: D7 erase, D6 write, D5 read, D4 zero the device when D6 is also set. */
 #define EAFLG          (g.ram[A_EAFLG])
-#define A_EABC         0x0192
+#define A_EABC         0x0189  /* Byte index into the buffer addressed by EASRCE. */
 #define EABC           (g.ram[A_EABC])
-#define A_EAX          0x0193
+#define A_EAX          0x018A  /* Byte offset within the EAROM for the next access. */
 #define EAX            (g.ram[A_EAX])
-#define A_EACNT        0x0194
+#define A_EACNT        0x018B  /* Byte offset within the EAROM for the last access. */
 #define EACNT          (g.ram[A_EACNT])
-#define A_EASEL        0x0195
+#define A_EASEL        0x018C  /* Index code identifying the batch operation in progress. */
 #define EASEL          (g.ram[A_EASEL])
-#define A_EACS         0x0196
+#define A_EACS         0x018D  /* Running checksum over the batch. */
 #define EACS           (g.ram[A_EACS])
-#define A_ONTIME       0x0197
+#define A_ONTIME       0x018E  /* Bookkeeping: total time the cabinet has been powered on, 4 bytes. */
 #define ONTIME         (g.ram[A_ONTIME])
-#define A_BONTIME      0x019B
+#define A_BONTIME      0x0192  /* Bookkeeping: bonus time, 4 bytes; reused as scratch during EAROM transfers. */
 #define BONTIME        (g.ram[A_BONTIME])
-#define A_PLAYTIME     0x019F
+#define A_PLAYTIME     0x0196  /* Bookkeeping: play time, 4 bytes for each of the 4 one- and two-player variants. */
 #define PLAYTIME       (g.ram[A_PLAYTIME])
-#define A_GAMES1       0x01AF
+#define A_GAMES1       0x01A6  /* Bookkeeping: games played, 3 bytes for each of the 4 variants. */
 #define GAMES1         (g.ram[A_GAMES1])
-#define A_THRENG       0x01E0
+#define A_THRENG       0x01E0  /* not a variable at all: THRENG is the constant $F0*2, the thrust energy of the rotating pair. Its value lands inside the 6502 stack. */
 #define THRENG         (g.ram[A_THRENG])
-#define A_XINC         0x0200
+#define A_XINC         0x0200  /* X velocity of every object, 50 entries, Atari's S8999.BBB format (signed, 3 fractional bits). */
 #define XINC           (g.ram[A_XINC])
-#define A_YINC         0x0232
+#define A_YINC         0x0232  /* Y velocity of every object, 50 entries, S9999.BBB format. */
 #define YINC           (g.ram[A_YINC])
-#define A_NROCKS       0x0264
+#define A_NROCKS       0x0264  /* Number of rocks currently on screen. */
 #define NROCKS         (g.ram[A_NROCKS])
-#define A_ENMDEL       0x0265
+#define A_ENMDEL       0x0265  /* Frames until this ship becomes a target again, one per ship. */
 #define ENMDEL         (g.ram[A_ENMDEL])
-#define A_EDELAY       0x0267
+#define A_EDELAY       0x0267  /* Delay before an enemy enters or fires, one per saucer. */
 #define EDELAY         (g.ram[A_EDELAY])
-#define A_SENMDEL      0x0269
+#define A_SENMDEL      0x0269  /* Starting value loaded into ENMDEL, one per ship. */
 #define SENMDEL        (g.ram[A_SENMDEL])
-#define A_RTIMER       0x026B
+#define A_RTIMER       0x026B  /* Rock timer: at 0 a saucer is sent in regardless of how many rocks remain. One per ship. */
 #define RTIMER         (g.ram[A_RTIMER])
-#define A_SDELAY       0x026D
+#define A_SDELAY       0x026D  /* Delay before this ship is put back; $80 means the ship was just destroyed. One per ship. */
 #define SDELAY         (g.ram[A_SDELAY])
-#define A_ETIMER       0x026F
+#define A_ETIMER       0x026F  /* Counts down to 0, at which point the saucer may return. One per saucer. */
 #define ETIMER         (g.ram[A_ETIMER])
-#define A_RDELAY       0x0271
+#define A_RDELAY       0x0271  /* Delay before more rocks are added. */
 #define RDELAY         (g.ram[A_RDELAY])
-#define A_THUMP3       0x0272
+#define A_THUMP3       0x0272  /* Starting value for the THUMP2 heartbeat-sound counter. */
 #define THUMP3         (g.ram[A_THUMP3])
-#define A_SHLDENG      0x0273
+#define A_SHLDENG      0x0273  /* Shield energy remaining, upper byte, one per ship; BGSHENG ($F0) is a full charge. */
 #define SHLDENG        (g.ram[A_SHLDENG])
-#define A_LSHLDENG     0x0275
+#define A_LSHLDENG     0x0275  /* Shield energy remaining, lower byte; MINSHENG ($18) is the minimum useful upper byte. */
 #define LSHLDENG       (g.ram[A_LSHLDENG])
-#define A_CSPEED       0x0277
+#define A_CSPEED       0x0277  /* Comet speed, 8 comets. */
 #define CSPEED         (g.ram[A_CSPEED])
-#define A_KSPEED       0x027F
+#define A_KSPEED       0x027F  /* Killer-mine speed, 6 mines. */
 #define KSPEED         (g.ram[A_KSPEED])
-#define A_CANGCH       0x0285
+#define A_CANGCH       0x0285  /* Per-frame change in comet heading, low byte, 8 comets. */
 #define CANGCH         (g.ram[A_CANGCH])
-#define A_KANGCH       0x028D
+#define A_KANGCH       0x028D  /* Per-frame change in killer-mine heading, low byte, 6 mines. */
 #define KANGCH         (g.ram[A_KANGCH])
-#define A_CANGLH       0x0293
+#define A_CANGLH       0x0293  /* Comet heading, high byte, 8 comets. */
 #define CANGLH         (g.ram[A_CANGLH])
-#define A_KANGLH       0x029B
+#define A_KANGLH       0x029B  /* Killer-mine heading, high byte, 6 mines. */
 #define KANGLH         (g.ram[A_KANGLH])
-#define A_ANGLE        0x02A1
+#define A_ANGLE        0x02A1  /* Saucer rotation angle, 2 saucers. */
 #define ANGLE          (g.ram[A_ANGLE])
-#define A_SANGLE       0x02A3
+#define A_SANGLE       0x02A3  /* Ship orientation angle, 2 ships. */
 #define SANGLE         (g.ram[A_SANGLE])
-#define A_CANGLL       0x02A5
+#define A_CANGLL       0x02A5  /* Comet heading, low byte, 8 comets. */
 #define CANGLL         (g.ram[A_CANGLL])
-#define A_KANGLL       0x02AD
+#define A_KANGLL       0x02AD  /* Killer-mine heading, low byte, 6 mines. */
 #define KANGLL         (g.ram[A_KANGLL])
-#define A_BANGLE       0x02B3
+#define A_BANGLE       0x02B3  /* Rotating bar angle, high byte. */
 #define BANGLE         (g.ram[A_BANGLE])
-#define A_BANGLL       0x02B4
+#define A_BANGLL       0x02B4  /* Rotating bar angle, low byte. */
 #define BANGLL         (g.ram[A_BANGLL])
-#define A_OBJXH        0x02B5
+#define A_OBJXH        0x02B5  /* X position of every object, high byte, 50 entries. */
 #define OBJXH          (g.ram[A_OBJXH])
-#define A_OBJYH        0x02E7
+#define A_OBJYH        0x02E7  /* Y position of every object, high byte, 50 entries. */
 #define OBJYH          (g.ram[A_OBJYH])
-#define A_ISNSP2       0x0319
+#define A_ISNSP2       0x0319  /* Initial speed for the second sound circuit. Declared but never referenced by the shipped ROM. */
 #define ISNSP2         (g.ram[A_ISNSP2])
-#define A_SNDBA2       0x031A
+#define A_SNDBA2       0x031A  /* Base value for the second sound circuit. Declared but never referenced by the shipped ROM. */
 #define SNDBA2         (g.ram[A_SNDBA2])
-#define A_SNDSP2       0x031B
+#define A_SNDSP2       0x031B  /* Speed for the second sound circuit. Declared but never referenced by the shipped ROM. */
 #define SNDSP2         (g.ram[A_SNDSP2])
-#define A_SPARKANGLE   0x031C
+#define A_SPARKANGLE   0x031C  /* Angle of each of the 4 spark rays arcing between the paired ships. */
 #define SPARKANGLE     (g.ram[A_SPARKANGLE])
-#define A_OBJXL        0x0320
+#define A_OBJXL        0x0320  /* X position of every object, low byte, 50 entries, 99999.BBB format. */
 #define OBJXL          (g.ram[A_OBJXL])
-#define A_OBJYL        0x0352
+#define A_OBJYL        0x0352  /* Y position of every object, low byte, 50 entries. */
 #define OBJYL          (g.ram[A_OBJYL])
-#define A_UWBAR        0x0384
+#define A_UWBAR        0x0384  /* Bar rotation speed, upper byte. */
 #define UWBAR          (g.ram[A_UWBAR])
-#define A_LWBAR        0x0385
+#define A_LWBAR        0x0385  /* Bar rotation speed, lower byte. */
 #define LWBAR          (g.ram[A_LWBAR])
-#define A_BXINCL       0x0386
+#define A_BXINCL       0x0386  /* Bar centre-of-mass X velocity, low byte; the high byte is BXINC, which is XINC+ZPAIR. */
 #define BXINCL         (g.ram[A_BXINCL])
-#define A_BYINCL       0x0387
+#define A_BYINCL       0x0387  /* Bar centre-of-mass Y velocity, low byte; the high byte is BYINC, which is YINC+ZPAIR. */
 #define BYINCL         (g.ram[A_BYINCL])
-#define A_PRTDAMAGE    0x0388
+#define A_PRTDAMAGE    0x0388  /* Partial damage taken when non-zero; MXPTDAMAGE ($80) is the maximum, counting negative. One per ship. */
 #define PRTDAMAGE      (g.ram[A_PRTDAMAGE])
-#define A_COLLIS       0x038A
+#define A_COLLIS       0x038A  /* Last object this ship collided with; COLBIT ($80) is shifted in each frame. One per ship. */
 #define COLLIS         (g.ram[A_COLLIS])
-#define A_STRADDLE     0x038C
+#define A_STRADDLE     0x038C  /* D7 set when the object straddles the X wrap, D6 when it straddles Y. */
 #define STRADDLE       (g.ram[A_STRADDLE])
-#define A_COMOFF       0x038D
+#define A_COMOFF       0x038D  /* -1 while the comets are being sent off screen. */
 #define COMOFF         (g.ram[A_COMOFF])
-#define A_OWNER        0x038E
+#define A_OWNER        0x038E  /* Who is credited for the current hit: 0 or 1, negative for nobody. */
 #define OWNER          (g.ram[A_OWNER])
-#define A_COMTYP       0x038F
+#define A_COMTYP       0x038F  /* Type occupying each comet slot: 0 = dwarf, $80 = comet. 8 slots. */
 #define COMTYP         (g.ram[A_COMTYP])
-#define A_COMSTART     0x0397
+#define A_COMSTART     0x0397  /* Where to start searching for a free comet slot, one per ship. */
 #define COMSTART       (g.ram[A_COMSTART])
-#define A_PROBCOMET    0x0399
+#define A_PROBCOMET    0x0399  /* Probability that a new object starts as a comet rather than a dwarf, one per ship. */
 #define PROBCOMET      (g.ram[A_PROBCOMET])
-#define A_DWFRMP       0x039B
+#define A_DWFRMP       0x039B  /* Dwarf ramping speed, one per ship. */
 #define DWFRMP         (g.ram[A_DWFRMP])
-#define A_SCSHSP       0x039D
+#define A_SCSHSP       0x039D  /* Saucer shooting speed; $80 means fast. One per ship. */
 #define SCSHSP         (g.ram[A_SCSHSP])
-#define A_XINCROT      0x039F
+#define A_XINCROT      0x039F  /* Scratch: X velocity after rotation. */
 #define XINCROT        (g.ram[A_XINCROT])
-#define A_YINCROT      0x03A0
+#define A_YINCROT      0x03A0  /* Scratch: Y velocity after rotation. */
 #define YINCROT        (g.ram[A_YINCROT])
-#define A_XPOSSAVE     0x03A1
+#define A_XPOSSAVE     0x03A1  /* Scratch: saved X position. */
 #define XPOSSAVE       (g.ram[A_XPOSSAVE])
-#define A_YPOSSAVE     0x03A2
+#define A_YPOSSAVE     0x03A2  /* Scratch: saved Y position. */
 #define YPOSSAVE       (g.ram[A_YPOSSAVE])
-#define A_SHHIGH       0x03A3
+#define A_SHHIGH       0x03A3  /* Show the high score table when non-zero. */
 #define SHHIGH         (g.ram[A_SHHIGH])
-#define A_FREXPLOSION  0x03A4
+#define A_FREXPLOSION  0x03A4  /* Explosion sound request. */
 #define FREXPLOSION    (g.ram[A_FREXPLOSION])
-#define A_MXRTIMER     0x03A5
+#define A_MXRTIMER     0x03A5  /* Value RTIMER is reloaded with, one per ship. */
 #define MXRTIMER       (g.ram[A_MXRTIMER])
-#define A_NWCACH       0x03A7
+#define A_NWCACH       0x03A7  /* Heading change for a newly launched planet or comet, one per ship. */
 #define NWCACH         (g.ram[A_NWCACH])
-#define A_NWCSPD       0x03A9
+#define A_NWCSPD       0x03A9  /* Speed for a newly launched comet, one per ship. */
 #define NWCSPD         (g.ram[A_NWCSPD])
-#define A_FCACH        0x03AB
+#define A_FCACH        0x03AB  /* Heading change for the first comet of a wave, one per ship. */
 #define FCACH          (g.ram[A_FCACH])
-#define A_FCSPD        0x03AD
+#define A_FCSPD        0x03AD  /* Speed for the first comet of a wave, one per ship. */
 #define FCSPD          (g.ram[A_FCSPD])
-#define A_WAVE         0x03AF
+#define A_WAVE         0x03AF  /* Wave number, used to scale bonus points. */
 #define WAVE           (g.ram[A_WAVE])
-#define A_GTIME        0x03B0
+#define A_GTIME        0x03B0  /* Game time accumulated from the 4 ms interrupt, 4 bytes. */
 #define GTIME          (g.ram[A_GTIME])
-#define A_BCOMSTART    0x03B4
+#define A_BCOMSTART    0x03B4  /* Rolling comet-slot search cursor, incremented as comets are launched; one per ship. Atari's source leaves it uncommented. */
 #define BCOMSTART      (g.ram[A_BCOMSTART])
-#define A_NCOMET       0x03B6
+#define A_NCOMET       0x03B6  /* Number of comets currently active. */
 #define NCOMET         (g.ram[A_NCOMET])
-#define A_COMTIMER     0x03B7
+#define A_COMTIMER     0x03B7  /* How much longer comets may stay active, for the rush at the end of a wave. */
 #define COMTIMER       (g.ram[A_COMTIMER])
-#define A_COMLIMIT     0x03B8
+#define A_COMLIMIT     0x03B8  /* Ceiling on how many comets may be active at once. */
 #define COMLIMIT       (g.ram[A_COMLIMIT])
-#define A_LNGTIMER     0x03B9
+#define A_LNGTIMER     0x03B9  /* Long timer, 2 bytes; once negative, saucers come out even with rocks on screen and shoot fast and often. */
 #define LNGTIMER       (g.ram[A_LNGTIMER])
-#define A_WHOSHOT      0x03BB
+#define A_WHOSHOT      0x03BB  /* Who shot this ship: 0 = the opponent, $FF = the computer. One per ship. */
 #define WHOSHOT        (g.ram[A_WHOSHOT])
-#define A_NENTCOMETS   0x03BD
+#define A_NENTCOMETS   0x03BD  /* Number of comets to send in at the end of the wave. */
 #define NENTCOMETS     (g.ram[A_NENTCOMETS])
-#define A_NENTDWARF    0x03BE
+#define A_NENTDWARF    0x03BE  /* Number of dwarfs to send in at the end of the wave. */
 #define NENTDWARF      (g.ram[A_NENTDWARF])
-#define A_ETARGET      0x03BF
+#define A_ETARGET      0x03BF  /* Which ship each saucer is hunting; -1 means inactive. 2 saucers. */
 #define ETARGET        (g.ram[A_ETARGET])
-#define A_CTARGET      0x03C1
+#define A_CTARGET      0x03C1  /* Which object each comet is hunting, 8 comets. */
 #define CTARGET        (g.ram[A_CTARGET])
-#define A_KTARGET      0x03C9
+#define A_KTARGET      0x03C9  /* Which object each killer mine is hunting, 6 mines. */
 #define KTARGET        (g.ram[A_KTARGET])
-#define A_SPARKTIME    0x03CF
+#define A_SPARKTIME    0x03CF  /* Countdown for the spark arcing between the paired ships; MXSPKTIME ($60) is the maximum and $80, being negative, means no spark. */
 #define SPARKTIME      (g.ram[A_SPARKTIME])
-#define A_IANGLE       0x03D0
+#define A_IANGLE       0x03D0  /* Buffered copy of each ship's angle. */
 #define IANGLE         (g.ram[A_IANGLE])
-#define A_LMONHITS     0x03D2
+#define A_LMONHITS     0x03D2  /* Monsters this player has killed, low byte, one per ship. */
 #define LMONHITS       (g.ram[A_LMONHITS])
-#define A_UMONHITS     0x03D4
+#define A_UMONHITS     0x03D4  /* Monsters this player has killed, high byte, one per ship. */
 #define UMONHITS       (g.ram[A_UMONHITS])
-#define A_ASTERS       0x03D6
+#define A_ASTERS       0x03D6  /* Rock rotation states, 8 rocks. */
 #define ASTERS         (g.ram[A_ASTERS])
-#define A_HSCFLG       0x03DE
+#define A_HSCFLG       0x03DE  /* Set while initials are being entered, so the sound routine can tell. */
 #define HSCFLG         (g.ram[A_HSCFLG])
-#define A_RODSTATUS    0x03DF
+#define A_RODSTATUS    0x03DF  /* Positive when the connecting rod needs drawing or redrawing. */
 #define RODSTATUS      (g.ram[A_RODSTATUS])
-#define A_SAVBOT       0x03E0
+#define A_SAVBOT       0x03E0  /* LASTGAM, the previous game-select reading, used to debounce the select button. SAVBOT is the marker for the start of the RAM that must be preserved. */
 #define SAVBOT         (g.ram[A_SAVBOT])
-#define A_PL0SCFLAG    0x03E1
+#define A_PL0SCFLAG    0x03E1  /* Negative when player 0's score has changed; with a V character it means the life count changed. */
 #define PL0SCFLAG      (g.ram[A_PL0SCFLAG])
-#define A_PL1SCFLAG    0x03E2
+#define A_PL1SCFLAG    0x03E2  /* Negative when player 1's score has changed. */
 #define PL1SCFLAG      (g.ram[A_PL1SCFLAG])
-#define A_CMBSCFLAG    0x03E3
+#define A_CMBSCFLAG    0x03E3  /* Negative when the combined score has changed. */
 #define CMBSCFLAG      (g.ram[A_CMBSCFLAG])
-#define A_UPDOWN       0x03E4
+#define A_UPDOWN       0x03E4  /* Negative to draw vectors and messages upside down, for the cocktail cabinet's second player. */
 #define UPDOWN         (g.ram[A_UPDOWN])
-#define A_SECOND       0x03E5
+#define A_SECOND       0x03E5  /* One-second tick counter. */
 #define SECOND         (g.ram[A_SECOND])
-#define A_FLASHCOL     0x03E6
+#define A_FLASHCOL     0x03E6  /* Colour used for the flashing display elements. */
 #define FLASHCOL       (g.ram[A_FLASHCOL])
-#define A_ENTER        0x03E7
+#define A_ENTER        0x03E7  /* Entry-effect timers, 2 bytes. */
 #define ENTER          (g.ram[A_ENTER])
-#define A_SFREQ        0x03E9
+#define A_SFREQ        0x03E9  /* Output frequency of the background hum. */
 #define SFREQ          (g.ram[A_SFREQ])
-#define A_SPFLG        0x03EA
+#define A_SPFLG        0x03EA  /* Flag for special initials, encoded the same way as UPDFLG. */
 #define SPFLG          (g.ram[A_SPFLG])
-#define A_FLSFLG       0x03EB
+#define A_FLSFLG       0x03EB  /* Flash the initials just entered, 2 bytes. */
 #define FLSFLG         (g.ram[A_FLSFLG])
-#define A_SAUCIX       0x03ED
+#define A_SAUCIX       0x03ED  /* Saucer picture index, advanced modulo 4 every fourth frame by MoveSaucerPicColor. */
 #define SAUCIX         (g.ram[A_SAUCIX])
-#define A_STRTLOK      0x03EE
+#define A_STRTLOK      0x03EE  /* Start-button lockout: 0 = game in progress, $80 = no starts allowed, $40 = select was pushed and starts are allowed. */
 #define STRTLOK        (g.ram[A_STRTLOK])
-#define A_EXPDEC       0x03EF
+#define A_EXPDEC       0x03EF  /* Explosion selection, 2 bytes: negative shows the full explosion, positive shows only the flying pieces. */
 #define EXPDEC         (g.ram[A_EXPDEC])
-#define A_SUPRSAC      0x03F1
+#define A_SUPRSAC      0x03F1  /* Super saucer flag; $80 means super. */
 #define SUPRSAC        (g.ram[A_SUPRSAC])
-#define A_SUPRTIM      0x03F2
+#define A_SUPRTIM      0x03F2  /* Super saucer shot timer. */
 #define SUPRTIM        (g.ram[A_SUPRTIM])
-#define A_SUPRDIS      0x03F3
+#define A_SUPRDIS      0x03F3  /* Super saucer distance. */
 #define SUPRDIS        (g.ram[A_SUPRDIS])
-#define A_LASTG        0x03F4
+#define A_LASTG        0x03F4  /* Last game played flag. */
 #define LASTG          (g.ram[A_LASTG])
-#define A_NEXTEX       0x03F5
+#define A_NEXTEX       0x03F5  /* Fanfare explosion counter. */
 #define NEXTEX         (g.ram[A_NEXTEX])
-#define A_SPECEX       0x03F6
+#define A_SPECEX       0x03F6  /* Special fanfare flag. */
 #define SPECEX         (g.ram[A_SPECEX])
-#define A_INTEN        0x03F7
+#define A_INTEN        0x03F7  /* Intensity pulse byte: the top 4 bits of FRAME held in the low nibble. */
 #define INTEN          (g.ram[A_INTEN])
-#define A_MODNUM       0x03F8
+#define A_MODNUM       0x03F8  /* Picture modulo counter; waves flagged $80 cycle it to vary the rock pictures. */
 #define MODNUM         (g.ram[A_MODNUM])
-#define A_DIFSW        0x03F9
+#define A_DIFSW        0x03F9  /* Difficulty switch reading, kept for the self-test display. */
 #define DIFSW          (g.ram[A_DIFSW])
 
 /* ---- hardware registers (reference only - go through sd_hw_*) ---- */
-#define A_HALT         0x0800
-#define A_HYPSW        0x0900
-#define A_ROTL         0x0902
-#define A_STRT1        0x0904
-#define A_OPTNA1       0x0905
-#define A_GAMSEL       0x0906
-#define A_CABERE       0x0907
-#define A_EAIN         0x0A00
-#define A_OUT1         0x0C00
-#define A_GOADD        0x0C80
-#define A_WTCHDG       0x0D00
-#define A_STOPAD       0x0D80
-#define A_INTACK       0x0E00
-#define A_EACTL        0x0E80
-#define A_EADAL        0x0F00
-#define A_POKEY        0x1000
-#define A_POKEY2       0x1400
+#define A_HALT         0x0800  /* In0. D7 3 kHz clock, D6 AVG HALT, D5 diagnostic step, D4 self-test (0 = on), D3 slam, D2-D0 coin sense. */
+#define A_HYPSW        0x0900  /* D7 shield/hyperspace, D6 fire. One switch pair per address through $0907. */
+#define A_ROTL         0x0902  /* D7 rotate left, D6 rotate right. */
+#define A_STRT1        0x0904  /* D7 thrust, D6 one-player start. */
+#define A_OPTNA1       0x0905  /* D6 sell games/players option (SELLGAMES). */
+#define A_GAMSEL       0x0906  /* D7 game select, D6 two-coin-minimum option (TWOCMN). */
+#define A_CABERE       0x0907  /* D7 cabinet type (COCKBIT): 1 = cocktail, 0 = upright. AS2DEC.MAC's equate comment says the opposite, but the code settles it - $690C LDX CABERE / BMI, commented 'COCKTAIL?????' / 'YEP...NO ADITIONAL FLIP NEEDED', so minus is the cocktail. D6 caberet select. */
+#define A_EAIN         0x0A00  /* EAROM data read. */
+#define A_OUT1         0x0C00  /* Output latch: D7 Y invert, D6 X invert, D5 start lamp (0 = on), D4 select lamp, D3 coin lockout (1 = no coins), D2-D0 left/centre/right coin counters. */
+#define A_GOADD        0x0C80  /* Write restarts the AVG on the display list at $2000. */
+#define A_WTCHDG       0x0D00  /* Write kicks the watchdog. */
+#define A_STOPAD       0x0D80  /* Write holds the AVG in reset. */
+#define A_INTACK       0x0E00  /* Write acknowledges the 4 ms IRQ. */
+#define A_EACTL        0x0E80  /* EAROM control latch: D0 clock (EACK), D1 C2, D2 C1 inverted, D3 chip enable. C1,C2 = 0,0 read; 1,0 write; 1,1 erase. */
+#define A_EADAL        0x0F00  /* EAROM address and data latch, $0F00-$0F3F. */
+#define A_POKEY        0x1000  /* POKEY 1: sound channels plus the option-switch and pot inputs. */
+#define A_POKEY2       0x1400  /* POKEY 2: sound channels plus the coin-option switches. */
 
 /* ---- vector RAM $2000-$27FF (offsets: A_NAME - 0x2000) ---- */
-#define A_VECMEM       0x2000
-#define A_VROCK1       0x2290
-#define A_CVR11        0x2292
-#define A_CVR12        0x2296
-#define A_CVR13        0x229A
-#define A_VROCK2       0x229E
-#define A_CVR21        0x22A0
-#define A_CVR22        0x22A4
-#define A_CVR23        0x22A8
-#define A_VROCK3       0x22AC
-#define A_PYR11        0x22AE
-#define A_PYR12        0x22B2
-#define A_PYR13        0x22B6
-#define A_VROCK4       0x22BA
-#define A_VROCK5       0x22BC
-#define A_VROCK6       0x22BE
-#define A_VROCK7       0x22C0
-#define A_VROCK8       0x22C2
-#define A_SAU11        0x22C4
-#define A_SAU12        0x22C8
-#define A_SAU13        0x22CC
-#define A_SPARKB       0x22D0
-#define A_PL0SET       0x2300
-#define A_PL1SET       0x230A
-#define A_CMBSET       0x2314
-#define A_CMSBSE       0x2342
-#define A_PL0ARE       0x2380
-#define A_PL1ARE       0x23C0
-#define A_SH0XPCOORD   0x2700
-#define A_SH1XPCOORD   0x2718
-#define A_CMSBAR       0x2736
-#define A_CMBARE       0x2780
+#define A_VECMEM       0x2000  /* Base of the 2K vector RAM; the AVG fetches its display list from here. */
+#define A_VROCK1       0x2290  /* Rock 1: 2-byte JMPL to the chosen rock picture in vector ROM. */
+#define A_CVR11        0x2292  /* Rock 1's first COLOR instruction plus RTSL, 4 bytes, patched each frame. */
+#define A_CVR12        0x2296  /* Rock 1's second COLOR instruction plus RTSL. */
+#define A_CVR13        0x229A  /* Rock 1's third COLOR instruction plus RTSL. */
+#define A_VROCK2       0x229E  /* Rock 2: 2-byte JMPL to the chosen rock picture. */
+#define A_CVR21        0x22A0  /* Rock 2's first COLOR instruction plus RTSL. */
+#define A_CVR22        0x22A4  /* Rock 2's second COLOR instruction plus RTSL. */
+#define A_CVR23        0x22A8  /* Rock 2's third COLOR instruction plus RTSL. */
+#define A_VROCK3       0x22AC  /* Rock 3: 2-byte JMPL to the pyramid picture. */
+#define A_PYR11        0x22AE  /* Pyramid's first COLOR instruction plus RTSL. */
+#define A_PYR12        0x22B2  /* Pyramid's second COLOR instruction plus RTSL. */
+#define A_PYR13        0x22B6  /* Pyramid's third COLOR instruction plus RTSL. */
+#define A_VROCK4       0x22BA  /* Rock 4: 2-byte JMPL, originally the cube. Rocks 4 to 8 reuse the colour instructions above. */
+#define A_VROCK5       0x22BC  /* Rock 5: 2-byte JMPL to its picture. */
+#define A_VROCK6       0x22BE  /* Rock 6: 2-byte JMPL to its picture. */
+#define A_VROCK7       0x22C0  /* Rock 7: 2-byte JMPL to its picture. */
+#define A_VROCK8       0x22C2  /* Rock 8: 2-byte JMPL to its picture. */
+#define A_SAU11        0x22C4  /* Saucer's first COLOR instruction plus RTSL, 4 bytes, patched each frame. */
+#define A_SAU12        0x22C8  /* Saucer's second COLOR instruction plus RTSL. */
+#define A_SAU13        0x22CC  /* Saucer's third COLOR instruction plus RTSL. */
+#define A_SPARKB       0x22D0  /* Spark buffer: $20 bytes of vector code rebuilt each frame for the arc between the paired ships. */
+#define A_PL0SET       0x2300  /* Player 0's score display-list header, 10 bytes. */
+#define A_PL1SET       0x230A  /* Player 1's score display-list header, 10 bytes. */
+#define A_CMBSET       0x2314  /* Combined-score display-list header. */
+#define A_CMSBSE       0x2342  /* CMSBSET: the inverted combined-score header, for the cocktail cabinet's second player. */
+#define A_PL0ARE       0x2380  /* PL0AREA: player 0's score digits. HSAREA immediately precedes it, which is the one critical pairing in vector RAM. */
+#define A_PL1ARE       0x23C0  /* PL1AREA: player 1's score digits. */
+#define A_SH0XPCOORD   0x2700  /* Ship 0's explosion-piece coordinates, 4 bytes per piece (Y low, Y high, X low, X high) for 6 pieces. */
+#define A_SH1XPCOORD   0x2718  /* Ship 1's explosion-piece coordinates, same layout. */
+#define A_CMSBAR       0x2736  /* CMSBAREA: the inverted combined-score digits. */
+#define A_CMBARE       0x2780  /* CMBAREA: the combined-score digits. */
 
 /* ---- vector/program ROM reference addresses ---- */
-#define A_CKUM4        0x2800
-#define A_ROCKA        0x2801
-#define A_ROCKSA       0x2811
+#define A_CKUM4        0x2800  /* SHIPS, the 34-entry ship-picture pointer table; this alias holds the low bytes. CKUM4 is a checksum byte the linker placed elsewhere. */
+#define A_ROCKA        0x2801  /* SHIPS+1, the high bytes of the same table. Shpdisplays reads the pair into VGLIST with LDA CKUM4,Y / LDA ROCKA,Y. */
+#define A_ROCKSA       0x2811  /* unreferenced. ROCKSA and ROCPIC belong to a relocatable CSECT the linker placed elsewhere, so this address is an artifact of the ASECT walk. */
 
 #endif /* SD_STATE_DEFS_H */

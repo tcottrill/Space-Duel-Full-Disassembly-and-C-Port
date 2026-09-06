@@ -15,18 +15,18 @@ against `spaceduel_program_rom.asm` and the boot sequence in
 
 Batch parameters come from two 4-byte tables: `$8747` = {first addr,
 checksum addr} per batch, `EaromOffsetLowestByte` `$874B` = {buffer lo, hi}.
-The checksum is the plain 8-bit sum of the data bytes (EAZFLG, $018D).
-Batch 1's buffer starts at EABC ($0192): the ontime counter's slot is the
+The checksum is the plain 8-bit sum of the data bytes (EACS, $018D).
+Batch 1's buffer starts at BONTIME ($0192): the ontime counter's slot is the
 first 4 bytes, games-played counters live at $01A6+ inside the same buffer
 (maintained by UpdateInfoAtEnd, not this module).
 
 ## 2. State cells
 
-Named (sd_state_defs.h): `EAZFLG $018D` running checksum; `EAREQU-EAFLG
+Named (sd_state_defs.h): `EACS $018D` running checksum; `ONTIME-$0191
 $018E-$0191` live 4-byte BCD ontime counter (the IRQ bumps it every ~4 s
-while no game is on); `EABC-EASEL $0192-$0195` its buffer slot; `EABUF $016D`
+while no game is on); `BONTIME-$0195 $0192-$0195` its buffer slot; `$016D $016D`
 is just a named byte inside the batch-0 buffer (never addressed directly by
-this code); `EACS $0196` first games-played... (used via `EACS,X` by
+this code); `PLAYTIME $0196` first games-played... (used via `PLAYTIME,X` by
 UpdateInfoAtEnd). Unnamed (local `EA_*` macros over `g.ram[0xXX]`):
 
 | cell | role |
@@ -40,12 +40,12 @@ UpdateInfoAtEnd). Unnamed (local `EA_*` macros over `g.ram[0xXX]`):
 | $018A | current EAROM address |
 | $018B | checksum (= last) EAROM address |
 | $018C | mask of the batch being serviced |
-| $C7/$C8 | buffer pointer lo/hi ($C8 = OBP0MINES - defines reuse the name) |
+| $C7/$C8 | buffer pointer lo/hi - this is EASRCE, the EAROM transfer pointer (the old RAM map named $C7/$C8 OBP0MINES, hence the note that used to sit here) |
 
 ## 3. The state machine and its cadence
 
 `output_earom_erased_written` ($8781) is one tick, called by `sd_irq` every
-16th 246 Hz tick (TOTOBJ & $0F == 0, i.e. every ~65 ms), plus synchronously
+16th 246 Hz tick (INTRPT & $0F == 0, i.e. every ~65 ms), plus synchronously
 from `read_everything`, plus recursively from its own tail while reading.
 
 Tick structure:
@@ -62,14 +62,14 @@ Tick structure:
      $40, EACTL = $0E, return. The ~65 ms until the next tick is the
      part's erase time.
    - **$40 write**: $0188 = $80 (next byte's erase); if $0184 zero the
-     buffer byte first; data = buffer byte, or EAZFLG (and $0188 = 0, done)
+     buffer byte first; data = buffer byte, or EACS (and $0188 = 0, done)
      when addr == $018B; write data to EADAL+addr; checksum += data;
      $0189++/$018A++; EACTL = $0C, return.
    - **$20 read**: EACTL $08, EADAL+addr = $08 (address latch, data moot),
      EACTL $09, NOP, EACTL $08, read EAIN. Data byte: store to buffer,
      checksum += byte, advance, EACTL = $00 and **jump back to the top**
      ("DO ALL READS AT ONCE") - a read batch completes inside one tick.
-     Checksum byte: compare with EAZFLG; mismatch zeroes buffer[index..0]
+     Checksum byte: compare with EACS; mismatch zeroes buffer[index..0]
      and ORs $018C into $0187; either way $0188 = 0 and it chains back to
      the top (which starts the next pending batch, if any).
 
@@ -100,10 +100,10 @@ a full 2-batch read - trivial).
 | SaveCopy $8911 | Y = buffer idx (not advanced), X = 2..0 | A = validated BCD byte or Subnum[X] |
 | SaveOriginal $8929 | Y = buffer idx (pre-incremented!), X | A = validated initial ($00, $0A-$24) or Subl[X] |
 | CopyFromBufferBack $88B6 | none ($80CA, self-test) | live cells $DD.../$0119... |
-| CopyOntimeFromBuffer $89A3 | none ($80CE, game start/end) | EABC -> EAREQU (4 bytes) |
+| CopyOntimeFromBuffer $89A3 | none ($80CE, game start/end) | BONTIME -> ONTIME (4 bytes) |
 
 Live-cell map used by the copies (unnamed, `g.ram[]`): scores $DD/$EC/$FB/
-$010A (+X, X = 2..0; only ROCKMIN $DE has a define), initials $0119/$0128/
+$010A (+X, X = 2..0; only $00DE $DE has a define), initials $0119/$0128/
 $0137/$0155/$0146 (+X). All-zero top 2P-fighter score after unpack =>
 "just cleared EAROM" and every table's top score is reseeded to 500
 ($05 middle byte at $DE/$ED/$FC/$010B).
@@ -119,7 +119,7 @@ $0187 clear) unpacks zeros - which validate as scores and blanks - and the
 all-zero test reseeds the four 500-point top scores; `CopyOntimeFromBuffer`
 always runs and zeroes the live ontime. Matches NOTES_oracle.md section 4.
 Note the boot check only gates on batch 0's bad bit; a bad bookkeeping
-checksum would still be copied to EAREQU (zeros, since the mismatch path
+checksum would still be copied to ONTIME (zeros, since the mismatch path
 wiped the buffer).
 
 Attract steady state: no requests pending, so the every-16th-tick call is
@@ -167,7 +167,7 @@ Open:
   $8997** are now translated and appended to this file (see section 9
   below) - they belong here after all: they're the tail of the game-end
   sequence that hands off into `RequestBookkeepingUpdate`, and their only
-  RAM effects (EACS/EAREQU/games-played counters/EABC) are all cells this
+  RAM effects (PLAYTIME/ONTIME/games-played counters/BONTIME) are all cells this
   module already owns or stages for the EAROM. **Averag $89B9** remains
   unassigned: confirmed by reading `UpdateInfoAtEnd`'s full body that it
   does not call `Averag` (it tail-jumps straight to
@@ -194,26 +194,26 @@ Game-end bookkeeping, called once per finished game from mainline.c's
 
 **AddGameTimeSubroutime ($8997)**: one decimal byte of the just-finished
 game's elapsed time (`GTIME`, $03B0, 4 bytes) folded into the per-game-
-type running total `EACS` ($0196+, 4 games x 4 bytes). In: `*x` = EACS
+type running total `PLAYTIME` ($0196+, 4 games x 4 bytes). In: `*x` = PLAYTIME
 index, `*y` = GTIME index, `cin` = incoming carry (threaded call to call,
-starting from `UpdateInfoAtEnd`'s `CLC`). Out: `EACS[x]` updated, `*x`/`*y`
+starting from `UpdateInfoAtEnd`'s `CLC`). Out: `PLAYTIME[x]` updated, `*x`/`*y`
 advanced by 1, returns outgoing carry. Its only caller unrolls it 4 times
 (`$8948-$8951`) rather than looping, so the C translation keeps the same
 4 explicit calls (`static` helper, not exposed in earom.h - nothing else
 calls it).
 
 **UpdateInfoAtEnd ($893E)** itself, in order:
-1. `EACS[game*4 .. game*4+3] += GTIME[0..3]` (decimal, via the helper above).
-2. `EAREQU[0..3] += GTIME[0..3]` (decimal) - folds the elapsed game time
+1. `PLAYTIME[game*4 .. game*4+3] += GTIME[0..3]` (decimal, via the helper above).
+2. `ONTIME[0..3] += GTIME[0..3]` (decimal) - folds the elapsed game time
    into the live ontime counter, which the IRQ stops advancing while a
    game is in progress (comment in the listing: "THIS COUNTER WAS OFF
    DURING THE GAME").
 3. Increments the 3-byte BCD games-played counter for this game type at
    unnamed `g.ram[0x1A6 + game*3 .. +2]` (no macro exists for this base;
-   `GAMES1` $01AF happens to alias game-type index 3 of this same array -
+   `$01AF` $01AF happens to alias game-type index 3 of this same array -
    `0x1A6 + 3*3 == 0x1AF` - noted in a comment rather than used, since
-   using `GAMES1,X`-style indexing across game types would be misleading).
-4. Stages `EAREQU` into `EABC` (4 bytes) and tail-calls
+   using `$01AF,X`-style indexing across game types would be misleading).
+4. Stages `ONTIME` into `BONTIME` (4 bytes) and tail-calls
    `request_bookkeeping_update()` to start the EAROM write - this was
    already implemented (section 4/7 above); no new seam calls needed.
 

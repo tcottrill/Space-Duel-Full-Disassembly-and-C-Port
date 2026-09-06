@@ -3,6 +3,15 @@
 ASTRD2.MAC declares RAM with `LABEL: .BLKB n` runs anchored by `.=` origins,
 before the program body at .=4000. Walking that section reproduces the address
 of every game variable, which is what turns operands into readable names.
+
+The walk must skip `.MACRO ... .ENDM` bodies. A macro definition emits nothing
+where it is written - only where it is called - so counting the `.BYTE`/`.WORD`
+lines inside one inflates the location counter. Four such lines sit ahead of
+the page 0 declarations (ASTRD2.MAC lines 187 and 190 in VCTRSC, 238 in COLOR,
+260 in MULBLD), which used to push every page 0 and page 1 variable 9 bytes too
+high: VGBRIT landed at $09 instead of $00, SCORE at $43 instead of $3A. The
+page 2/3, vector RAM and vector ROM sections open with their own `.=` origins
+and so were never affected.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -23,8 +32,18 @@ def build(srcdir=None, main="ASTRD2.MAC", stop_line=709):
                 except Exception:
                     pass
 
-    vars_, pc = {}, 0
+    vars_, pc, in_macro = {}, 0, False
     for l in lines[:stop_line]:
+        if l.kind == "directive":
+            d = l.op.upper()
+            if d == ".MACRO":
+                in_macro = True
+                continue
+            if d == ".ENDM":
+                in_macro = False
+                continue
+        if in_macro:                       # a definition emits nothing here
+            continue
         if l.kind == "directive" and l.op == ".=":
             try:
                 pc = ev.eval(l.operand, dot=pc)
@@ -46,9 +65,24 @@ def build(srcdir=None, main="ASTRD2.MAC", stop_line=709):
             elif d == ".WORD":
                 pc += 2 * mapper.count_args(o)
     # equates that name hardware registers are useful too
+    _STORAGE.clear()
+    _STORAGE.update(vars_)
     for k, v in syms.items():
         vars_.setdefault(k, v)
     return vars_, syms
+
+
+_STORAGE = set()
+
+def storage_labels(srcdir=None):
+    """Names that came from a real declaration in the RAM walk, as opposed to
+    an equate folded in afterwards. Atari's sources define plenty of constants
+    whose value happens to equal a low RAM address (BLACK = 0, BLUE = 1), and
+    without this a colour constant outranks the variable actually living there.
+    """
+    if not _STORAGE:
+        build(srcdir)
+    return frozenset(_STORAGE)
 
 if __name__ == "__main__":
     v, syms = build()

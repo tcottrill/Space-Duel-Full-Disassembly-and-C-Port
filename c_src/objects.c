@@ -136,7 +136,7 @@ static uint8_t asr8(uint8_t a, int *c)
  * x = the X (denominator) difference, y = the Y (numerator) difference;
  * out A = the angle, 256 units per circle. */
 extern uint8_t part_signed_number_exit(uint8_t x, uint8_t y);
-/* InitializeComet ($6B68): reads WHITE = which player gets the comet, and
+/* InitializeComet ($6B68): reads TEMP1 = which player gets the comet, and
  * RETURNS the 6502 X it leaves - $4A9C is a JMP, so that X is
  * CompetitiveWantWaitOther's own exit X (mainline.c). */
 extern uint8_t initialize_comet(void);
@@ -201,7 +201,7 @@ void split_rock_into_fragments(void);        /* SplitRockIntoFragments $6554 */
  * ($449B) for objects >= $11 and from the size-indexed run at $44A9 for
  * rocks; the test is a box test on the halved 16-bit differences plus a
  * "chop off the corners" |dx|+|dy| test against 3/2 of the radius sum.
- * No inputs, no outputs; XCOMP/FOURPI carry X/Y across the
+ * No inputs, no outputs; TEMP3/FOURPI carry X/Y across the
  * DestructionDuringCollision call, exactly as the ROM does. */
 void collision_detector(void)
 {
@@ -236,16 +236,16 @@ void collision_detector(void)
         CMP8(a, 0xFA, &c);
         if (!c) goto s19;                       /* too far in Y            */
 
-        /* L43F2: |dx| / 2 into WHITE (the carry chain continues) */
-        WHITE = sbc8(OXL(y), OXL(x), &c);
+        /* L43F2: |dx| / 2 into TEMP1 (the carry chain continues) */
+        TEMP1 = sbc8(OXL(y), OXL(x), &c);
         a = sbc8(OXH(y), OXH(x), &c);
         a = lsr8(a, &c);
-        WHITE = ror8(WHITE, &c);                /* divided by 2            */
+        TEMP1 = ror8(TEMP1, &c);                /* divided by 2            */
         a = asl8(a, &c);                        /* reset the zero flag     */
         if (a != 0) {                           /* BEQ _32 = within 64     */
             if ((uint8_t)(a ^ 0xFE) != 0)
                 goto s19;                       /* too far away            */
-            WHITE = (uint8_t)(WHITE ^ 0xFF);    /* distance from torpedo   */
+            TEMP1 = (uint8_t)(TEMP1 ^ 0xFF);    /* distance from torpedo   */
         }
 
         /* L4410 _32: |dy| / 2 into EACE */
@@ -273,29 +273,29 @@ void collision_detector(void)
         a = adc8(r, COLL(0x447A + x), &c);
 
         /* L4449 _70 */
-        CMP8(a, WHITE, &c);
+        CMP8(a, TEMP1, &c);
         if (!c) goto s19;                       /* no hit                  */
         CMP8(a, EACE, &c);
         if (!c) goto s19;
-        POKRAN = a;
+        TEMP2 = a;
         a = lsr8(a, &c);
         c = 0;
-        a = adc8(a, POKRAN, &c);
-        POKRAN = a;                             /* 3/2 distance            */
+        a = adc8(a, TEMP2, &c);
+        TEMP2 = a;                             /* 3/2 distance            */
         POTGO = adc8(0x00, 0x00, &c);           /* its upper byte          */
 
         /* L445F _72: |dx| + |dy| vs that (chops the corners off) */
-        WHITE = adc8(EACE, WHITE, &c);          /* the carry is clear here */
+        TEMP1 = adc8(EACE, TEMP1, &c);          /* the carry is clear here */
         EACE = adc8(0x00, 0x00, &c);
-        CMP8(POKRAN, WHITE, &c);                /* sets C for the 16-bit   */
+        CMP8(TEMP2, TEMP1, &c);                /* sets C for the 16-bit   */
         (void)sbc8(POTGO, EACE, &c);
         if (!c) goto s19;                       /* a miss on the object    */
 
-        XCOMP = x;                              /* L4475                   */
+        TEMP3 = x;                              /* L4475                   */
         FOURPI = y;
         destruction_during_collision(x, y);
         y = FOURPI;
-        x = XCOMP;
+        x = TEMP3;
         a = OST(x);                             /* still active? (shields) */
         if (a == 0 || NEG(a))
             y = 0x00;                           /* _78: restart with a new X */
@@ -309,7 +309,7 @@ void collision_detector(void)
 }
 
 /* DestructionDuringCollision ($44D0): object x (a torpedo, mine or ship)
- * hit object y.  XCOMP = x and FOURPI = y are already staged by the
+ * hit object y.  TEMP3 = x and FOURPI = y are already staged by the
  * caller and are how x/y survive the nested calls.  OWNER ($38E) is
  * loaded from ValueOwnershipNegativeNobody ($4571,X). */
 static void destruction_during_collision(uint8_t x, uint8_t y)
@@ -343,7 +343,7 @@ static void destruction_during_collision(uint8_t x, uint8_t y)
             /* X/Y here are AddPointsToScore's leftovers - see NOTES       */
             explosion(x, y);
             initiate_killer_mine();             /* restart another         */
-            x = XCOMP;
+            x = TEMP3;
             y = FOURPI;
         }
         /* L4517 _35: shove the victim along by the shot's velocity        */
@@ -352,7 +352,7 @@ static void destruction_during_collision(uint8_t x, uint8_t y)
         c = 0;                                  /* _47: CLC                */
         OXL(y) = adc8(a, OXL(y), &c);
         OXH(y) = adc8(xs, OXH(y), &c);
-        x = XCOMP;
+        x = TEMP3;
         a = OVY(x);
         xs = NEG(a) ? 0xFF : 0x00;
         c = 0;                                  /* _49: CLC                */
@@ -392,7 +392,7 @@ static void dstr60(uint8_t x, uint8_t y)
     }
     back_away_from_collision(x);
     back_away_from_collision(FOURPI);           /* the Y collision object  */
-    switch_velocities(FOURPI, XCOMP);           /* bounce the two ships    */
+    switch_velocities(FOURPI, TEMP3);           /* bounce the two ships    */
 }
 
 /* CheckShieldConditionPossibly ($45A1): x = the ship object ($21/$22, or
@@ -422,11 +422,11 @@ static void check_shield_condition_possibly(uint8_t x, uint8_t y)
 
     /* L45CA _51 */
     y = FOURPI;
-    TEMP5 = (uint8_t)(g.ram[0x0369 + x] & 0x7F);     /* the old object     */
+    TEMPA = (uint8_t)(g.ram[0x0369 + x] & 0x7F);     /* the old object     */
     g.ram[0x0369 + x] = y;                           /* the new one        */
-    if (y == TEMP5)
+    if (y == TEMPA)
         return;                                 /* _90: do not bounce again */
-    if (NEG(LASTSW)) {                          /* the pair                */
+    if (NEG(TOGCOMB)) {                          /* the pair                */
         x = 0x23;
         reverse_angular_momentum();
     }
@@ -434,7 +434,7 @@ static void check_shield_condition_possibly(uint8_t x, uint8_t y)
 }
 
 /* DestroyXShip ($45E8): x = the ship, y = what killed it (the live 6502 Y
- * at entry = the collision object).  WHITE keeps x across the nested
+ * at entry = the collision object).  TEMP1 keeps x across the nested
  * calls ("for COMOWAY"). */
 static void destroy_x_ship(uint8_t x, uint8_t y)
 {
@@ -442,10 +442,10 @@ static void destroy_x_ship(uint8_t x, uint8_t y)
     int c;
     int to_62 = 0, to_61 = 0, to_80 = 0;
 
-    WHITE = x;
+    TEMP1 = x;
     explosion(x, y);                            /* explosion sound         */
     OST(x) = 0xA0;                              /* full explosion length   */
-    if (NEG(LASTSW)) {                          /* combined lives          */
+    if (NEG(TOGCOMB)) {                          /* combined lives          */
         if (!NEG(g.ram[0x0367 + x])) {          /* PRTDAMAGE: damaged?     */
             y = FIREI(0x4D51 + x);              /* the other ship's index  */
             if (!NEG(g.ram[0x0367 + y])) {
@@ -473,7 +473,7 @@ static void destroy_x_ship(uint8_t x, uint8_t y)
     }
 
     if (to_61) {                                /* _61                     */
-        if (NEG(SAUMIN)) {
+        if (NEG(ATSTG)) {
             to_62 = 1;                          /* skip if blocks too      */
         } else {
             x = 0x20;
@@ -485,25 +485,25 @@ static void destroy_x_ship(uint8_t x, uint8_t y)
                 if (x == 0) break;              /* _68: DEX / BPL          */
                 x--;
             }
-            x = WHITE;
+            x = TEMP1;
             g.ram[0x53] = 0xFF;                 /* $53: rocks off screen   */
             to_80 = 1;                          /* BNE _80 (always)        */
         }
     }
 
     if (to_62 && !to_80) {                      /* L464E _62               */
-        y = XCOMP;                              /* the original collision X */
+        y = TEMP3;                              /* the original collision X */
         CMP8(y, 0x28, &c);
         if (c) {
             OST(x) = 0xE0;                      /* start the flashing time */
             g.ram[0x03CE + x] = 0xE0;           /* only flash              */
             expset(x);
-            x = WHITE;
+            x = TEMP1;
             a = 0x50;                           /* full ship value         */
             if (NEG(g.ram[0x0367 + x]))
                 a = 0x25;                       /* crippled ship value     */
             add_points_to_score(a);             /* _63                     */
-            x = WHITE;
+            x = TEMP1;
             a = 0xFF;
         } else {                                /* _65                     */
             a = 0x00;
@@ -554,7 +554,7 @@ static void retarget_comets(uint8_t x)
 /* Updif3 ($46E8), AloneGame1Player ($472E), Updif5 ($477C) and
  * TwinGame1Player ($47B8) are the four per-game difficulty ramps that
  * UpTheDifficulty's PHA/PHA/RTS dispatch (DifficultyTableLo/Hi $46B6/$46BA)
- * selects with Y = $34.  x = OWNER; WHITE/EACE hold the 16-bit total hit
+ * selects with Y = $34.  x = OWNER; TEMP1/EACE hold the 16-bit total hit
  * count of both players. */
 static void updif3(uint8_t x)
 {
@@ -620,19 +620,19 @@ static void alone_game1_player(uint8_t x)
 
 static void updif5(uint8_t x)
 {
-    if (EACE != 0 || WHITE >= 0x20) {
+    if (EACE != 0 || TEMP1 >= 0x20) {
         g.ram[A_PROBCOMET + x]++;               /* _20                     */
         if (NEG(g.ram[A_PROBCOMET + x]))
             g.ram[A_PROBCOMET + x]--;
     }
     /* _30 */
-    if (EACE != 0 || (WHITE >= 0x10 && (WHITE & 0x0F) == 0)) {
+    if (EACE != 0 || (TEMP1 >= 0x10 && (TEMP1 & 0x0F) == 0)) {
         g.ram[A_DWFRMP + x]++;                  /* _35                     */
         if (NEG(g.ram[A_DWFRMP + x]))
             g.ram[A_DWFRMP + x]--;              /* don't let past $80      */
     }
     /* _50 */
-    if (EACE == 0 && (WHITE & 0x0F) == 0) {     /* every 16 hits...        */
+    if (EACE == 0 && (TEMP1 & 0x0F) == 0) {     /* every 16 hits...        */
         COMLIMIT++;                             /* ...get harder           */
         g.ram[0x03B5]++;                        /* BCOMSTART+1             */
         BCOMSTART++;
@@ -646,20 +646,20 @@ static void twin_game1_player(uint8_t x, int c)
 {
     uint8_t a;
 
-    if (EACE != 0 || WHITE >= 0x20) {
+    if (EACE != 0 || TEMP1 >= 0x20) {
         g.ram[A_PROBCOMET + x]++;               /* _20                     */
         if (NEG(g.ram[A_PROBCOMET + x]))
             g.ram[A_PROBCOMET + x]--;
     }
     /* _30 */
-    if (EACE != 0 || (WHITE >= 0x10 && (WHITE & 0x0F) == 0)) {
+    if (EACE != 0 || (TEMP1 >= 0x10 && (TEMP1 & 0x0F) == 0)) {
         g.ram[A_DWFRMP + x]++;                  /* _35                     */
         if (NEG(g.ram[A_DWFRMP + x]))
             g.ram[A_DWFRMP + x]--;
     }
-    /* _50: with EACE == 0 the CMP chain runs and leaves C = WHITE >= $25 */
+    /* _50: with EACE == 0 the CMP chain runs and leaves C = TEMP1 >= $25 */
     if (EACE == 0) {
-        a = WHITE;
+        a = TEMP1;
         if (a == 0x07) {
             g.ram[0x03B5]++;
             COMLIMIT++;
@@ -675,7 +675,7 @@ static void twin_game1_player(uint8_t x, int c)
         CMP8(a, 0x25, &c);
     }
     /* _60 */
-    if (c && (WHITE & 0x07) == 0) {             /* above the last limit    */
+    if (c && (TEMP1 & 0x07) == 0) {             /* above the last limit    */
         COMLIMIT++;
         g.ram[0x03B5]++;
         BCOMSTART++;
@@ -694,9 +694,9 @@ void up_the_difficulty(void)
     g.ram[A_LMONHITS + x]++;                    /* _10                     */
     if (g.ram[A_LMONHITS + x] == 0)
         g.ram[A_UMONHITS + x]++;
-    /* _20: the 16-bit total of both players' hits into WHITE/EACE */
+    /* _20: the 16-bit total of both players' hits into TEMP1/EACE */
     c = 0;
-    WHITE = adc8(LMONHITS, g.ram[0x03D3], &c);
+    TEMP1 = adc8(LMONHITS, g.ram[0x03D3], &c);
     EACE = adc8(UMONHITS, g.ram[0x03D5], &c);
     switch (ZP_34) {                            /* the PHA/PHA/RTS jump    */
     case 0:  updif3(x);               break;    /* $46E8                   */
@@ -767,9 +767,9 @@ static void collision_bounce(uint8_t x, uint8_t y)
     /* _80 */
     if (y >= 0x1F || y < 0x11)
         return;                                 /* saucers keep the angle  */
-    TEMP2 = x;                                  /* remember the entering X */
+    TEMP5 = x;                                  /* remember the entering X */
     a = part_signed_number_exit(OVX(y), OVY(y));
-    /* LDX TEMP2 restores X, which nothing downstream reads */
+    /* LDX TEMP5 restores X, which nothing downstream reads */
     y = FOURPI;
     g.ram[0x0282 + y] = a;                      /* CANGLH/KANGLH           */
     if (y >= 0x19)
@@ -870,7 +870,7 @@ uint8_t killer_mines(uint8_t x)
     a = OST(x);
     if (a == 0 || NEG(a))                       /* dead / exploding comet  */
         return competitive_want_wait_other(x);
-    XCOMP = x;
+    TEMP3 = x;
     y = g.ram[A_GTIME + x];                     /* KTARGET: ship to track  */
     return acc_holds_angle_object(x, y);
 }
@@ -883,9 +883,9 @@ uint8_t acc_holds_angle_object(uint8_t x, uint8_t y)
     return klmi7(find_difference_coordinates(x, y));
 }
 
-/* Klmi7 ($4959): steer object XCOMP toward angle a and rebuild its
- * velocity.  XCOMP < $19 = a comet (its COMTYP $037E bit 0 means "go
- * straight"), >= $19 = a killer mine (XINCL bit 7 = all mines leaving).
+/* Klmi7 ($4959): steer object TEMP3 toward angle a and rebuild its
+ * velocity.  TEMP3 < $19 = a comet (its COMTYP $037E bit 0 means "go
+ * straight"), >= $19 = a killer mine (KLMOFF bit 7 = all mines leaving).
  * The turn rate comes from $0274,X (CANGCH/KANGCH) and is accumulated
  * into the 16-bit heading $0294,X / $0282,X (CANGLL/KANGLL +
  * CANGLH/KANGLH); the speed at $0266,X (CSPEED/KSPEED) ramps toward the
@@ -894,11 +894,11 @@ uint8_t acc_holds_angle_object(uint8_t x, uint8_t y)
  * CompetitiveWantWaitOther, so it returns that routine's exit X. */
 uint8_t klmi7(uint8_t a)
 {
-    uint8_t x = XCOMP, y;
+    uint8_t x = TEMP3, y;
     int c = 0, skip = 0;
 
     if (x >= 0x19) {                            /* _20                     */
-        if (NEG(XINCL))
+        if (NEG(KLMOFF))
             skip = 1;                           /* mines going off screen  */
     } else {
         y = a;                                  /* TAY: store the angle    */
@@ -918,14 +918,14 @@ uint8_t klmi7(uint8_t a)
             a = adc8((uint8_t)(a ^ 0xFF), 0x00, &c2);
             c = c2;
         }
-        /* _30: signed >> 2 into TEMP5:A - TEMP5's old bits shift through */
+        /* _30: signed >> 2 into TEMPA:A - TEMPA's old bits shift through */
         a = asr8(a, &c);
-        TEMP5 = ror8(TEMP5, &c);
+        TEMPA = ror8(TEMPA, &c);
         a = asr8(a, &c);
-        TEMP5 = ror8(TEMP5, &c);
+        TEMPA = ror8(TEMPA, &c);
         y = a;                                  /* the upper byte          */
         c = 0;
-        g.ram[0x0294 + x] = adc8(TEMP5, g.ram[0x0294 + x], &c);
+        g.ram[0x0294 + x] = adc8(TEMPA, g.ram[0x0294 + x], &c);
         g.ram[0x0282 + x] = adc8(y, g.ram[0x0282 + x], &c);
     }
 
@@ -957,12 +957,12 @@ uint8_t klmi7(uint8_t a)
     }
 
     /* Ok1 ($49CB): the velocity = speed * (cos, sin) of the heading */
-    WHITE = a;                                  /* the multiplier          */
+    TEMP1 = a;                                  /* the multiplier          */
     a = output_temp2_temp21(cos_sin_pi2(g.ram[0x0282 + x]));
-    x = XCOMP;
+    x = TEMP3;
     OVX(x) = a;
     a = output_temp2_temp21(pi_angle0(g.ram[0x0282 + x]));
-    x = XCOMP;                                  /* "YES, SIN USES X"       */
+    x = TEMP3;                                  /* "YES, SIN USES X"       */
     OVY(x) = a;
     return competitive_want_wait_other(x);
 }
@@ -990,7 +990,7 @@ uint8_t competitive_want_wait_other(uint8_t x)
     a = lsr8(a, &c);
     a = lsr8(a, &c);                            /* c = 0 after both        */
     x = a;                                      /* X = 0 or 1              */
-    WHITE = a;                                  /* who owns the enemy      */
+    TEMP1 = a;                                  /* who owns the enemy      */
     if (a != 0 && NEG(SUPRSAC))
         return x;                               /* skip #1 for a super     */
     a = adc8(a, 0x21, &c);                      /* _11: the carry is clear */
@@ -1021,7 +1021,7 @@ uint8_t competitive_want_wait_other(uint8_t x)
     a = OST(y);
     if (a == 0 || NEG(a))
         return x;                               /* _90                     */
-    if (NEG(LASTSW)) {                          /* the pair                */
+    if (NEG(TOGCOMB)) {                          /* the pair                */
         if ((uint8_t)(RTIMER | g.ram[0x026C]) == 0)
             goto s60;
         if ((uint8_t)(ENMDEL | g.ram[0x0266]) == 0)
@@ -1066,7 +1066,7 @@ s60:                                            /* L4A84 _60               */
  * and the side from POKEY2/POKEY1 RANDOM, seeds the entry position and
  * speed from Sspos/Ssminus by wave, and may promote saucer 0 to the
  * "super saucer" twin.  Falls into ResetTimers, so it returns that
- * routine's exit X (= WHITE) when it gets that far. */
+ * routine's exit X (= TEMP1) when it gets that far. */
 uint8_t scent5(uint8_t a, uint8_t x)
 {
     uint8_t y;
@@ -1110,7 +1110,7 @@ uint8_t scent5(uint8_t a, uint8_t x)
     g.ram[0x02D4 + x] = 0x00;
     g.ram[0x0371 + x] = 0x00;
     a = sd_hw_pokey_random(0);
-    TEMP5 = a;
+    TEMPA = a;
     a = (uint8_t)(a & 0x1F);                    /* approx one screen       */
     if (a >= 0x18)
         a = (uint8_t)(a & 0x17);                /* must be 0 to 767        */
@@ -1122,7 +1122,7 @@ uint8_t scent5(uint8_t a, uint8_t x)
     y = (uint8_t)(WAVE >> 2);                   /* wave # / 4              */
     if (y >= 0x04) y = 0x04;
     a = SAUT(0x4C66 + y);                       /* _16: min positive speed */
-    if (!(TEMP5 & 0x40)) {                      /* BIT TEMP5 / BVS _20     */
+    if (!(TEMPA & 0x40)) {                      /* BIT TEMPA / BVS _20     */
         a = 0x1F;
         g.ram[0x02D4 + x] = a;
         g.ram[0x033F + x]--;                    /* start on the right side */
@@ -1139,10 +1139,10 @@ uint8_t scent5(uint8_t a, uint8_t x)
     return reset_timers();
 }
 
-/* ResetTimers ($4B5C): X = WHITE, then Hasent. */
+/* ResetTimers ($4B5C): X = TEMP1, then Hasent. */
 uint8_t reset_timers(void)
 {
-    return hasent(WHITE);
+    return hasent(TEMP1);
 }
 
 /* Hasent ($4B5E): reload player x's enemy delay from SENMDEL and clamp
@@ -1171,7 +1171,7 @@ uint8_t enemy_fire_control(uint8_t a, int carry)
 
     a = sbc8(a, 0x02, &c);                      /* the carry was set       */
     x = a;                                      /* X is now 0 or 1         */
-    XCOMP = x;
+    TEMP3 = x;
     a = (uint8_t)(ZP_44 & 0xF0);
     a = asl8(a, &c);
     if (a == 0) {                               /* time to change direction */
@@ -1236,11 +1236,11 @@ static uint8_t efire3(uint8_t x)
     c = 0;
     POTGO = asr8(g.ram[0x021F + x], &c);        /* (XINC / 2)              */
     c = 1;
-    POKRAN = sbc8(OXL(y), g.ram[0x033F + x], &c);
+    TEMP2 = sbc8(OXL(y), g.ram[0x033F + x], &c);
     a = sbc8(OXH(y), g.ram[0x02D4 + x], &c);
-    POKRAN = asl8(POKRAN, &c);
+    TEMP2 = asl8(TEMP2, &c);
     a = rol8(a, &c);
-    POKRAN = asl8(POKRAN, &c);
+    TEMP2 = asl8(TEMP2, &c);
     a = rol8(a, &c);                            /* -$7F to +$7F            */
     c = 1;
     a = sbc8(a, POTGO, &c);                     /* torpedo speed follows us */
@@ -1249,17 +1249,17 @@ static uint8_t efire3(uint8_t x)
         c = 0;
         POTGO = asr8(g.ram[0x0251 + x], &c);
         c = 1;
-        POKRAN = sbc8(OYL(y), g.ram[0x0371 + x], &c);
+        TEMP2 = sbc8(OYL(y), g.ram[0x0371 + x], &c);
         a = sbc8(OYH(y), g.ram[0x0306 + x], &c);
-        POKRAN = asl8(POKRAN, &c);
+        TEMP2 = asl8(TEMP2, &c);
         a = rol8(a, &c);
-        POKRAN = asl8(POKRAN, &c);
+        TEMP2 = asl8(TEMP2, &c);
         a = rol8(a, &c);                        /* -$5F to +$5F            */
         c = 1;
         a = sbc8(a, POTGO, &c);                 /* account for our motion  */
         a = part_signed_number_exit(denom, a);  /* arctan(y/x)             */
     }
-    x = XCOMP;
+    x = TEMP3;
     g.ram[A_ANGLE + x] = a;
     CMP8(ZP_45, 0x30, &c);                      /* units of ~4 seconds     */
     a = (uint8_t)(sd_hw_pokey_random(0) & 0x0F);
@@ -1274,7 +1274,7 @@ static uint8_t efire3(uint8_t x)
 
 /* StartLookingHere ($4C47): choose the saucer's torpedo slot window
  * (StartingValues $4C5E / StoppingValues $4C60 - two torpedoes each) and
- * whether the shot is fast (POKRAN bit 7). */
+ * whether the shot is fast (TEMP2 bit 7). */
 static uint8_t start_looking_here(uint8_t x)
 {
     uint8_t a, y;
@@ -1284,14 +1284,14 @@ static uint8_t start_looking_here(uint8_t x)
     a = (uint8_t)(g.ram[A_SCSHSP + x] | SUPRSAC);
     if (NEG(a))
         a = 0x80;                               /* fast for the dawdled    */
-    POKRAN = a;                                 /* FastSlow: fast or slow  */
+    TEMP2 = a;                                 /* FastSlow: fast or slow  */
     temp280_fast0(x, y);
     return x;
 }
 
 /* FireShipsTorpedos ($4C70): x = ship 0/1.  Reads the fire button through
  * IN1 (bit 6) - in attract the "button" is a POKEY random number - and
- * edge-detects it in CMBSCORE,X ($49/$4A).  In the drone game ($51 bit 7)
+ * edge-detects it in LASTSW,X ($49/$4A).  In the drone game ($51 bit 7)
  * this single call fires for both ships. */
 void fire_ships_torpedos(uint8_t x)
 {
@@ -1302,13 +1302,13 @@ void fire_ships_torpedos(uint8_t x)
         a = sd_hw_in1(x);                       /* _10: bit 6 = pushed     */
     else
         a = sd_hw_pokey_random(0);
-    /* _11: shift bit 6 into the carry, then into CMBSCORE,X bit 7 */
+    /* _11: shift bit 6 into the carry, then into LASTSW,X bit 7 */
     a = asl8(a, &c);
     a = asl8(a, &c);
-    g.ram[A_CMBSCORE + x] = ror8(g.ram[A_CMBSCORE + x], &c);
-    if (!NEG(g.ram[A_CMBSCORE + x]))
+    g.ram[A_LASTSW + x] = ror8(g.ram[A_LASTSW + x], &c);
+    if (!NEG(g.ram[A_LASTSW + x]))
         return;                                 /* Fire2: not pressed      */
-    a = g.ram[A_CMBSCORE + x];
+    a = g.ram[A_LASTSW + x];
     a = asl8(a, &c);
     if (NEG(a))
         return;                                 /* Fire2: on last time too */
@@ -1337,8 +1337,8 @@ static void fire_ships_torpedos_20(uint8_t x)
         return;                                 /* Fire2: shields are on   */
     /* _50 */
     x = (uint8_t)(x + 2);                       /* X = 2 or 3 for Fire3    */
-    XCOMP = x;
-    POKRAN = 0x80;
+    TEMP3 = x;
+    TEMP2 = 0x80;
     FOURPI = FIREI(0x4D6B + x);                 /* the stopping index      */
     y = FIREI(0x4D69 + x);                      /* the starting index      */
     if (g.ram[A_BXINCL + x] != 0)               /* PRTDAMAGE,ship          */
@@ -1377,18 +1377,18 @@ void fire3(uint8_t x, uint8_t y)
     int c;
 
     a = 0x12;
-    if (!NEG(POKRAN))
+    if (!NEG(TEMP2))
         a = (uint8_t)(a << 1);                  /* a slow shot lives twice */
     OST(y) = a;                                 /* _10: length of life     */
 
     a = cos_sin_pi2(g.ram[A_ANGLE + x]);        /* the X component         */
     c = 0;
     a = asr8(a, &c);                            /* divide by 2             */
-    if (!NEG(POKRAN))
+    if (!NEG(TEMP2))
         a = asr8(a, &c);                        /* divide again            */
     EACE = a;                                   /* _15                     */
     c = 0;
-    x = XCOMP;
+    x = TEMP3;
     a = adc8(a, g.ram[0x021F + x], &c);
     if (NEG(a)) {                               /* _23                     */
         if (a < 0x91) a = 0x91;                 /* the minimum             */
@@ -1400,10 +1400,10 @@ void fire3(uint8_t x, uint8_t y)
     a = pi_angle0(g.ram[A_ANGLE + x]);          /* the Y component         */
     c = 0;
     a = asr8(a, &c);
-    if (!NEG(POKRAN))
+    if (!NEG(TEMP2))
         a = asr8(a, &c);
     POTGO = a;                                  /* _32                     */
-    x = XCOMP;
+    x = TEMP3;
     c = 0;
     a = adc8(a, g.ram[0x0251 + x], &c);
     if (NEG(a)) {                               /* _33                     */
@@ -1480,7 +1480,7 @@ void zero_all_ram_past(void)
 {
     unsigned i;
 
-    for (i = 0x35; i != 0xD9; i++)              /* _10: STA BLACK,X        */
+    for (i = 0x35; i != 0xD9; i++)              /* _10: STA VGBRIT,X        */
         g.ram[i] = 0x00;
     for (i = 0x00; i <= 0xFF; i++)              /* _20: STA XINC,X         */
         g.ram[A_XINC + i] = 0x00;
@@ -1491,7 +1491,7 @@ void zero_all_ram_past(void)
 /* Initialization ($4F66): a new game.  Wipes the play RAM, clears both
  * scores, marks all three score areas dirty, re-reads the options, seeds
  * the per-player enemy timers and comet parameters, and loads the
- * game-type toggles ($51 from Ttogdrone, LASTSW from
+ * game-type toggles ($51 from Ttogdrone, TOGCOMB from
  * TableInitialValuesToggles).  Falls into Inset2 ($4FEE, display.c). */
 void initialization(void)
 {
@@ -1529,7 +1529,7 @@ void initialization(void)
     g.ram[0x03B5] = 0xFF;                       /* BCOMSTART+1             */
     x = ZP_34;
     ZP_51 = TOGT(0x6CD1 + x);                   /* Ttogdrone               */
-    LASTSW = TOGT(0x6CCD + x);                  /* TableInitialValuesToggles */
+    TOGCOMB = TOGT(0x6CCD + x);                  /* TableInitialValuesToggles */
     if (x == 0x01) {
         g.ram[0x026E] = 0x00;                   /* SDELAY+1                */
         g.ram[0x48] = 0x00;
@@ -1571,7 +1571,7 @@ void motion_update_routine(uint8_t x)
     uint8_t a;
     int c;
 
-    if (COMTIMER != 0 && NEG(LASTSW)) {
+    if (COMTIMER != 0 && NEG(TOGCOMB)) {
         c = 1;
         a = sbc8(g.ram[0x0308 + x], g.ram[0x0309], &c);
         a = entry_input_exit_absolute(a);
@@ -1590,7 +1590,7 @@ void motion_update_routine(uint8_t x)
 /* Moti20 ($51A9): integrate every object's 16-bit position by its
  * velocity, run the explosion animations, apply the screen wrap (or the
  * onslaught cage bounce), then draw the picture.  X walks $2F down to
- * $00 and XCOMP mirrors it across the Pictur call.  RED/CHAN2V hold the
+ * $00 and TEMP3 mirrors it across the Pictur call.  RED/XCOMP hold the
  * new X high/low and TWOPI/CHAN3V the new Y - Pictur reads them. */
 void moti20(void)
 {
@@ -1601,7 +1601,7 @@ void moti20(void)
     x = 0x2F;                                   /* the objects to move     */
 
     for (;;) {
-        XCOMP = x;                              /* _11: save for later use */
+        TEMP3 = x;                              /* _11: save for later use */
         a = OST(x);
         if (a == 0)
             goto next;                          /* _13                     */
@@ -1636,7 +1636,7 @@ void moti20(void)
                             y = 0x7F;
                             RDELAY = y;         /* delay before starting   */
                             if (ZP_35 != 0) {   /* not in attract          */
-                                XINCL = 0xFF;   /* mines off               */
+                                KLMOFF = 0xFF;   /* mines off               */
                                 c = 0;
                                 a = adc8(WAVE, g.ram[0xCF], &c);
                                 a = (uint8_t)(a >> 2);   /* onslaught size */
@@ -1645,7 +1645,7 @@ void moti20(void)
                                 if (!NEG(COMOFF)) {      /* _38: just died? */
                                     NENTCOMETS = ENTDW(0x5154 + y);
                                     NENTDWARF = ENTDW(0x5164 + y);
-                                    if (NEG(LASTSW))
+                                    if (NEG(TOGCOMB))
                                         STRADDLE = 0xFF; /* assume straddle */
                                     COMTIMER = 0x60;     /* _35: onslaught  */
                                     SFREQ = 0xFF;        /* reset hum freq  */
@@ -1665,7 +1665,7 @@ void moti20(void)
         a = OVX(x);
         if (NEG(a)) y = 0xFF;                   /* the sign extension      */
         a = adc8(a, OXL(x), &c);                /* _62                     */
-        CHAN2V = a;
+        XCOMP = a;
         a = adc8(y, OXH(x), &c);
         if (a < 0x20)
             goto x85;                           /* _27: already 0..1023    */
@@ -1706,12 +1706,12 @@ void moti20(void)
             a = 0x1F;
             y = 0xFF;
         }
-        CHAN2V = y;                             /* _26                     */
+        XCOMP = y;                             /* _26                     */
         goto x85;                               /* _27                     */
 
     x76:
         if (x >= 0x19) {
-            if (!NEG(XINCL)) goto x80;          /* stay                    */
+            if (!NEG(KLMOFF)) goto x80;          /* stay                    */
             goto x81;                           /* leave                   */
         }
         /* _73: a comet or dwarf */
@@ -1776,7 +1776,7 @@ void moti20(void)
 
     y58:
         if (x >= 0x19) {
-            if (!NEG(XINCL)) goto y89;          /* stay                    */
+            if (!NEG(KLMOFF)) goto y89;          /* stay                    */
             goto x81;                           /* leave                   */
         }
         /* _82 */
@@ -1802,14 +1802,14 @@ void moti20(void)
                 OYH(x)++;                       /* _100: force off bottom  */
                 goto y93;
             }
-            TEMP2 = a;
+            TEMP5 = a;
             c = 0;
             a = adc8(a, SUPRDIS, &c);           /* check the top distance  */
             CMP8(a, 0x17, &c);
             if (a == 0x17)
                 goto y93;                       /* at the top: leave it    */
             if (!c) {
-                a = TEMP2;                      /* _94                     */
+                a = TEMP5;                      /* _94                     */
                 goto y95;
             }
             OYH(x)--;                           /* force off the top       */
@@ -1818,28 +1818,28 @@ void moti20(void)
             TWOPI = OYH(x);                     /* for the picture routine */
             if (TWOPI != 0)
                 goto y96;                       /* "we know this is never 0" */
-            a = TEMP2;                          /* falls into _94          */
+            a = TEMP5;                          /* falls into _94          */
         }
     y95:
         OYH(x) = a;
         TWOPI = a;
         OYL(x) = CHAN3V;
     y96:
-        OXL(x) = CHAN2V;
+        OXL(x) = XCOMP;
         OXH(x) = RED;
         if (x == 0x23)
             goto next;                          /* _99: the rod has no pic */
         if (NEG(SPECEX)) {                      /* special explosions?     */
-            CMP8(OYH(x), OST(x), &c);           /* OBJ holds the dest Y    */
+            CMP8(OYH(x), OST(x), &c);           /* $00A0 holds the dest Y    */
             if (c) {
                 OVY(x) = 0x00;                  /* stop the motion         */
                 OST(x) = 0xA0;                  /* explode                 */
                 explosion(x, y);                /* sound                   */
-                x = XCOMP;                      /* recall X                */
+                x = TEMP3;                      /* recall X                */
             }
         }
         pictur(x);                              /* _121: display the pic   */
-        x = XCOMP;
+        x = TEMP3;
 
     next:                                       /* _13                     */
         if (x == 0)
@@ -1863,9 +1863,9 @@ void sbttl_stcomet(uint8_t x)
 /* KillXSaucer ($53DB): 300 points, explosion, then ClearSaucer. */
 void kill_x_saucer(uint8_t x)
 {
-    WHITE = x;
+    TEMP1 = x;
     add_points_to_score(0x30);
-    x = WHITE;
+    x = TEMP1;
     /* Y here is AddPointsToScore's leftover - see NOTES */
     explosion(x, 0x00);                         /* explosion sound         */
     clear_saucer(0xA0, x);
@@ -1892,14 +1892,14 @@ int wait_for_directed_enemies(uint8_t y)
 {
     uint8_t x;
 
-    TEMP5 = y;
+    TEMPA = y;
     for (x = 0x02; x != 0; x--) {               /* _20: the two saucers    */
-        if (g.ram[A_NENTDWARF + x] == TEMP5 &&  /* ETARGET-1,x             */
+        if (g.ram[A_NENTDWARF + x] == TEMPA &&  /* ETARGET-1,x             */
             g.ram[0xB5 + x] != 0)
             return 0;                           /* _80: Z clear            */
     }
     for (x = 0x08; x != 0; x--) {               /* _55: the comets         */
-        if (g.ram[0x03C0 + x] == TEMP5 &&       /* CTARGET-1,x             */
+        if (g.ram[0x03C0 + x] == TEMPA &&       /* CTARGET-1,x             */
             g.ram[0xA7 + x] != 0)
             return 0;
     }
@@ -1917,7 +1917,7 @@ static uint8_t entry_no_requirements_exit(void)
 }
 
 /* ReverseTravelVelocity ($542C): negate the 16-bit Y velocity of ship x
- * (low byte at $2C+x = $4D/$4E = FRAME, high byte at YINC,x). */
+ * (low byte at $2C+x = $4D/$4E = YINCL, high byte at YINC,x). */
 static void reverse_travel_velocity(uint8_t x)
 {
     int c = 1;
@@ -1979,7 +1979,7 @@ static void drop_shields_wall_hit(void)
         if (NEG(twin_game_both_shields(x)))     /* switch pushed?          */
             game23_shields(x);                  /* yes: take away energy   */
     }
-    /* LDX XCOMP restores X for the caller (no RAM effect) */
+    /* LDX TEMP3 restores X for the caller (no RAM effect) */
 }
 
 /* ================================================================== */
@@ -1996,8 +1996,8 @@ void move_ship(uint8_t x)
     uint8_t a, y;
     int c;
 
-    XCOMP = x;
-    if (NEG(LASTSW)) {                          /* combined lives          */
+    TEMP3 = x;
+    if (NEG(TOGCOMB)) {                          /* combined lives          */
         if (x == 0x00)
             return;                             /* _91: last pass through  */
         dorigid();                              /* _31: move the pair      */
@@ -2030,7 +2030,7 @@ void move_ship(uint8_t x)
         goto s94;                               /* an enemy is aimed here  */
 
     /* _92: bring the ship back */
-    x = XCOMP;
+    x = TEMP3;
     g.ram[0x0221 + x] = 0x00;
     g.ram[0x0253 + x] = 0x00;
     if (ZP_34 == 0x01) {                        /* the alone game          */
@@ -2081,7 +2081,7 @@ s97:
     return;
 
 s94:
-    x = XCOMP;
+    x = TEMP3;
 s8:
     g.ram[A_SDELAY + x]++;                      /* _8                      */
     return;
@@ -2103,38 +2103,38 @@ active:                                         /* L555A _5                */
         return;
     }
     thrust_sound(x, 0x00);                      /* Y unknown - see NOTES   */
-    WHITE = 0x00;                               /* the sign extension      */
+    TEMP1 = 0x00;                               /* the sign extension      */
     a = cos_sin_pi2(g.ram[A_SANGLE + x]);       /* cos = the X change * 4  */
     a = asl8(a, &c);
-    if (c) WHITE--;                             /* _20                     */
-    x = XCOMP;
+    if (c) TEMP1--;                             /* _20                     */
+    x = TEMP3;
     if (g.ram[A_PRTDAMAGE + x] == 0) {
         a = asl8(a, &c);                        /* _25: full power = x4    */
-        WHITE = rol8(WHITE, &c);
+        TEMP1 = rol8(TEMP1, &c);
     }
     c = 0;                                      /* CLC                     */
     g.ram[0x4B + x] = adc8(a, g.ram[0x4B + x], &c);
-    a = adc8(WHITE, g.ram[0x0221 + x], &c);
+    a = adc8(TEMP1, g.ram[0x0221 + x], &c);
     g.ram[0x0221 + x] = out_range(a);           /* check the range         */
 
-    WHITE = 0x00;
+    TEMP1 = 0x00;
     a = pi_angle0(g.ram[A_SANGLE + x]);         /* sin(angle)              */
     a = asl8(a, &c);                            /* _50                     */
-    if (c) WHITE--;                             /* _60                     */
-    x = XCOMP;
+    if (c) TEMP1--;                             /* _60                     */
+    x = TEMP3;
     if (g.ram[A_PRTDAMAGE + x] == 0) {
         a = asl8(a, &c);                        /* _65                     */
-        WHITE = rol8(WHITE, &c);
+        TEMP1 = rol8(TEMP1, &c);
     }
     c = 0;
-    g.ram[A_FRAME + x] = adc8(a, g.ram[A_FRAME + x], &c);
-    a = adc8(WHITE, g.ram[0x0253 + x], &c);
+    g.ram[A_YINCL + x] = adc8(a, g.ram[A_YINCL + x], &c);
+    a = adc8(TEMP1, g.ram[0x0253 + x], &c);
     g.ram[0x0253 + x] = out_range(a);
 }
 
 /* Shipfriction ($55C6): subtract velocity/128 (rounded away from zero)
  * from each axis of ship x.  carry = the 6502 carry on entry; it only
- * reaches bit 0 of the scratch cell TEMP5 through `ROL TEMP5`, but the
+ * reaches bit 0 of the scratch cell TEMPA through `ROL TEMPA`, but the
  * oracle sees that store. */
 void shipfriction(uint8_t x, int carry)
 {
@@ -2142,10 +2142,10 @@ void shipfriction(uint8_t x, int carry)
     int c = carry;
 
     y = 0x00;
-    TEMP5 = g.ram[0x4B + x];
-    if ((uint8_t)(TEMP5 | g.ram[0x0221 + x]) != 0) {
+    TEMPA = g.ram[0x4B + x];
+    if ((uint8_t)(TEMPA | g.ram[0x0221 + x]) != 0) {
         a = g.ram[0x0221 + x];
-        TEMP5 = rol8(TEMP5, &c);
+        TEMPA = rol8(TEMPA, &c);
         a = rol8(a, &c);
         a = (uint8_t)(a ^ 0xFF);
         c = 1;                                  /* SEC forms the +1        */
@@ -2155,15 +2155,15 @@ void shipfriction(uint8_t x, int carry)
     }
     /* _87 */
     y = 0x00;
-    TEMP5 = g.ram[A_FRAME + x];
-    if ((uint8_t)(TEMP5 | g.ram[0x0253 + x]) != 0) {
+    TEMPA = g.ram[A_YINCL + x];
+    if ((uint8_t)(TEMPA | g.ram[0x0253 + x]) != 0) {
         a = g.ram[0x0253 + x];
-        TEMP5 = rol8(TEMP5, &c);
+        TEMPA = rol8(TEMPA, &c);
         a = rol8(a, &c);
         c = 1;
         a = (uint8_t)(a ^ 0xFF);
         if (NEG(a)) { y--; c = 0; }             /* _88                     */
-        g.ram[A_FRAME + x] = adc8(a, g.ram[A_FRAME + x], &c);
+        g.ram[A_YINCL + x] = adc8(a, g.ram[A_YINCL + x], &c);
         g.ram[0x0253 + x] = adc8(y, g.ram[0x0253 + x], &c);
     }
 }
@@ -2223,25 +2223,25 @@ static void will_assume_radius_bar(uint8_t x)
     y = 0x00;
     a = asl8(a, &c);
     if (c) y--;                                 /* _25                     */
-    x = XCOMP;
+    x = TEMP3;
     c = 0;
     g.ram[0x0341 + x] = adc8(a, g.ram[0x0343], &c);  /* X of centre of mass */
     g.ram[0x02D6 + x] = adc8(y, g.ram[0x02D8], &c);
-    WHITE = XPOSSAVE;
+    TEMP1 = XPOSSAVE;
     a = signed_by_signed_mult(UWBAR);
     a = asl8(a, &c);
-    TEMP5 = a;
+    TEMPA = a;
     a = asl8(a, &c);
     c = 0;
-    a = adc8(a, TEMP5, &c);                     /* x6                      */
-    x = XCOMP;
+    a = adc8(a, TEMPA, &c);                     /* x6                      */
+    x = TEMP3;
     YINCROT = a;
     c = 0;
     g.ram[0x0253 + x] = adc8(a, g.ram[0x0255], &c);
 
     /* _30 */
     a = pi_angle0(g.ram[0x16]);
-    x = XCOMP;
+    x = TEMP3;
     YPOSSAVE = a;
     y = 0x00;
     a = asl8(a, &c);
@@ -2249,14 +2249,14 @@ static void will_assume_radius_bar(uint8_t x)
     c = 0;
     g.ram[0x0373 + x] = adc8(a, g.ram[0x0375], &c);
     g.ram[0x0308 + x] = adc8(y, g.ram[0x030A], &c);
-    WHITE = comp(YPOSSAVE);
+    TEMP1 = comp(YPOSSAVE);
     a = signed_by_signed_mult(UWBAR);
     a = asl8(a, &c);
-    TEMP5 = a;
+    TEMPA = a;
     a = asl8(a, &c);
     c = 0;
-    a = adc8(a, TEMP5, &c);
-    x = XCOMP;
+    a = adc8(a, TEMPA, &c);
+    x = TEMP3;
     c = 0;
     XINCROT = a;
     g.ram[0x0221 + x] = adc8(a, g.ram[0x0223], &c);
@@ -2276,21 +2276,21 @@ static uint8_t thrust_two_ships(uint8_t x)
     if (x != 0x00)
         a = (uint8_t)(a ^ 0x80);                /* _5                      */
     g.ram[0x16] = a;
-    WHITE = 0x28;
+    TEMP1 = 0x28;
     c = 1;
-    TEMP2 = sbc8(g.ram[A_SANGLE + x], g.ram[0x16], &c);   /* relative angle */
-    NOBJ = pi_angle0(TEMP2);                    /* sin of the rel. angle   */
-    a = output_temp2_temp21(NOBJ);
+    TEMP5 = sbc8(g.ram[A_SANGLE + x], g.ram[0x16], &c);   /* relative angle */
+    TEMP7 = pi_angle0(TEMP5);                    /* sin of the rel. angle   */
+    a = output_temp2_temp21(TEMP7);
     y = 0x00;
     if (NEG(a)) y--;                            /* TAX sets the status     */
     c = 0;                                      /* _10                     */
     LWBAR = adc8(a, LWBAR, &c);
     UWBAR = adc8(y, UWBAR, &c);
 
-    WHITE = 0xF0;
-    a = output_temp2_temp21(NOBJ);
+    TEMP1 = 0xF0;
+    a = output_temp2_temp21(TEMP7);
     g.ram[0x14] = a;
-    WHITE = a;                                  /* prepare the next mult   */
+    TEMP1 = a;                                  /* prepare the next mult   */
     a = signed_by_signed_mult(cos_sin_pi2(g.ram[0x16]));
     y = 0x00;                                   /* the intrinsic /2 undone */
     a = asl8(a, &c);
@@ -2300,7 +2300,7 @@ static uint8_t thrust_two_ships(uint8_t x)
     a = adc8(y, g.ram[0x0255], &c);
     g.ram[0x0255] = out_range(a);
 
-    WHITE = g.ram[0x14];
+    TEMP1 = g.ram[0x14];
     a = (uint8_t)(g.ram[0x16] + 0x40);
     a = signed_by_signed_mult(cos_sin_pi2(a));
     y = 0x00;
@@ -2311,13 +2311,13 @@ static uint8_t thrust_two_ships(uint8_t x)
     a = adc8(y, g.ram[0x0223], &c);
     g.ram[0x0223] = out_range(a);
 
-    WHITE = 0xF0;                               /* the multiplier          */
-    a = output_temp2_temp21(cos_sin_pi2(TEMP2));
+    TEMP1 = 0xF0;                               /* the multiplier          */
+    a = output_temp2_temp21(cos_sin_pi2(TEMP5));
     g.ram[0x14] = a;                            /* the translation amount  */
-    WHITE = a;
+    TEMP1 = a;
     a = signed_by_signed_mult(cos_sin_pi2(g.ram[0x16]));
     y = 0x00;
-    POKRAN = asl8(POKRAN, &c);                  /* begin multiply by two   */
+    TEMP2 = asl8(TEMP2, &c);                  /* begin multiply by two   */
     a = rol8(a, &c);
     if (NEG(a)) y--;                            /* _40                     */
     c = 0;
@@ -2325,10 +2325,10 @@ static uint8_t thrust_two_ships(uint8_t x)
     a = adc8(y, g.ram[0x0223], &c);
     g.ram[0x0223] = out_range(a);
 
-    WHITE = g.ram[0x14];
+    TEMP1 = g.ram[0x14];
     a = signed_by_signed_mult(pi_angle0(g.ram[0x16]));
     y = 0x00;
-    POKRAN = asl8(POKRAN, &c);
+    TEMP2 = asl8(TEMP2, &c);
     a = rol8(a, &c);
     if (NEG(a)) y--;                            /* _50                     */
     c = 0;
@@ -2344,7 +2344,7 @@ static uint8_t thrust_two_ships(uint8_t x)
  * switches, spins the bar and applies its friction. */
 void dorigid(void)
 {
-    if ((uint8_t)(g.ram[0xB8] | OBKLMINES) != 0) {
+    if ((uint8_t)(g.ram[0xB8] | (g.ram[0x00B9])) != 0) {
         dorig3();                               /* one ship is on screen   */
         return;
     }
@@ -2372,7 +2372,7 @@ void dorigid(void)
     }
     CMBSCFLAG = 0xBF;                           /* _1: score and lives     */
     g.ram[0xB8] = 0x02;
-    OBKLMINES = 0x02;
+    (g.ram[0x00B9]) = 0x02;
     g.ram[0xBA] = 0x02;
     g.ram[0x53] = 0x00;
     COMOFF = 0x00;                              /* allow the enemies       */
@@ -2410,7 +2410,7 @@ static void dorig3(void)
     /* _16 */
     x = 0x01;
     for (;;) {
-        XCOMP = x;                              /* _20                     */
+        TEMP3 = x;                              /* _20                     */
         if (g.ram[A_SDELAY + x] == 0) {
             if (NEG(ZP_51)) {                   /* the drone thrusts now   */
                 c = 0;
@@ -2427,13 +2427,13 @@ static void dorig3(void)
             /* _57 */
             if (!c && NEG(a)) {
                 y = thrust_two_ships(x);
-                x = XCOMP;
+                x = TEMP3;
                 thrust_sound(x, y);             /* thrust on               */
             }
-            x = XCOMP;                          /* _70                     */
+            x = TEMP3;                          /* _70                     */
             will_assume_radius_bar(x);          /* _75                     */
         }
-        x = XCOMP;                              /* _71                     */
+        x = TEMP3;                              /* _71                     */
         if (x == 0)
             break;
         x--;
@@ -2451,8 +2451,8 @@ static void dorig3(void)
 
     /* _82: friction on the pair's X velocity */
     y = 0x00;
-    TEMP5 = BXINCL;                             /* "not needed"            */
-    if ((uint8_t)(TEMP5 | g.ram[0x0223]) != 0) {
+    TEMPA = BXINCL;                             /* "not needed"            */
+    if ((uint8_t)(TEMPA | g.ram[0x0223]) != 0) {
         a = (uint8_t)(g.ram[0x0223] ^ 0xFF);
         c = 1;
         if (NEG(a)) { y--; c = 0; }             /* _26                     */
@@ -2461,8 +2461,8 @@ static void dorig3(void)
     }
     /* _27 */
     y = 0x00;
-    TEMP5 = BYINCL;
-    if ((uint8_t)(TEMP5 | g.ram[0x0255]) != 0) {
+    TEMPA = BYINCL;
+    if ((uint8_t)(TEMPA | g.ram[0x0255]) != 0) {
         c = 1;
         a = (uint8_t)(g.ram[0x0255] ^ 0xFF);
         if (NEG(a)) { y--; c = 0; }             /* _28                     */
@@ -2471,8 +2471,8 @@ static void dorig3(void)
     }
     /* _29: and on the spin */
     y = 0x00;
-    TEMP5 = LWBAR;
-    if ((uint8_t)(TEMP5 | UWBAR) != 0) {
+    TEMPA = LWBAR;
+    if ((uint8_t)(TEMPA | UWBAR) != 0) {
         a = (uint8_t)(UWBAR ^ 0xFF);
         c = 1;
         if (NEG(a)) { y--; c = 0; }             /* _36                     */
@@ -2534,13 +2534,13 @@ l90:
 /* wave and object start-up                                            */
 /* ================================================================== */
 
-/* Newp2 ($5977): place new rock x.  The special attract wave (SAUMIN bit
+/* Newp2 ($5977): place new rock x.  The special attract wave (ATSTG bit
  * 7) lines the rocks up on a fixed X grid at Y = $10 with no motion;
  * otherwise GetNewVelocity gives the rock a random velocity around object
  * y's and drops it on the top or the left edge. */
 uint8_t newp2(uint8_t x, uint8_t y)
 {
-    if (!NEG(SAUMIN)) {
+    if (!NEG(ATSTG)) {
         get_new_velocity(x, y);                 /* normal                  */
         return y;                               /* GetNewVelocity/NewRandom
                                                  * VelocityUsing never
@@ -2557,7 +2557,7 @@ uint8_t newp2(uint8_t x, uint8_t y)
                                                  * which NewastStartNew
                                                  * Asteroids_10 then feeds
                                                  * back into L80RandomWave0
-                                                 * ($6FDF STY NOBJ)        */
+                                                 * ($6FDF STY TEMP7)        */
 }
 
 /* GetNewVelocity ($5997). */
@@ -2586,14 +2586,14 @@ static void get_new_velocity(uint8_t x, uint8_t y)
 /* NewastStartNewAsteroids ($59C0): start the next wave.  Waits for the
  * screen to clear, bumps WAVE and the difficulty level $CF, wipes the
  * rock slots, spawns $CF+2 rocks through L80RandomWave0/Newp2, launches
- * $CF-1 killer mines and ramps the rock speed limits ($D5-$D8) by KLMINC.
+ * $CF-1 killer mines and ramps the rock speed limits ($D5-$D8) by DIFF.
  * Falls into ResetEnemyTimers. */
 void newast_start_new_asteroids(void)
 {
     uint8_t a, x, y;
     int c;
 
-    if (SCORE != 0)
+    if (GENDING != 0)
         return;                                 /* Newaex: the game ends   */
     if (!NEG(ZP_35)) {                          /* attract                 */
         if ((uint8_t)((ZP_45 & 0x07) | SHHIGH) != 0)
@@ -2620,9 +2620,9 @@ void newast_start_new_asteroids(void)
 start:                                          /* L5A01 _1                */
     a = 0x00;                                   /* might want this off     */
     if (!NEG(ZP_35))
-        a = (uint8_t)(SAUMIN ^ 0x80);           /* the alt special flag    */
-    SAUMIN = a;                                 /* _42                     */
-    if (NEG(SAUMIN)) {                          /* the special attract     */
+        a = (uint8_t)(ATSTG ^ 0x80);           /* the alt special flag    */
+    ATSTG = a;                                 /* _42                     */
+    if (NEG(ATSTG)) {                          /* the special attract     */
         for (x = 0x10; x != 0xFF; x--)          /* _43                     */
             g.ram[0x00B6 + x] = 0x00;           /* saucers, ships, shots   */
     }
@@ -2630,13 +2630,13 @@ start:                                          /* L5A01 _1                */
     g.ram[0x17] = 0xFF;                         /* random spinner direction */
     WAVE++;                                     /* the next wave           */
     c = 0;
-    x = KLMINC;                                 /* the difficulty option   */
+    x = DIFF;                                 /* the difficulty option   */
     a = adc8(g.ram[0xCF], WAVET(0x5BAD + x), &c);
     if (a >= 0x09) a = 0x09;                    /* max out at 9            */
     g.ram[0xCF] = a;                            /* _2                      */
     if (ZP_35 == 0) {
         a = 0x07;
-        if (!NEG(SAUMIN))
+        if (!NEG(ATSTG))
             a = 0x01;                           /* not the 9-shape attract */
         g.ram[0xCF] = a;                        /* _22                     */
         WAVE = a;
@@ -2662,7 +2662,7 @@ start:                                          /* L5A01 _1                */
                                                  * 6502 Y = x & $0F, which
                                                  * the next pass's
                                                  * L80RandomWave0 stores in
-                                                 * NOBJ ($15)              */
+                                                 * TEMP7 ($15)              */
         x--;
     } while (x != 0);
 
@@ -2672,18 +2672,18 @@ start:                                          /* L5A01 _1                */
     c = 1;
     a = sbc8(g.ram[0xCF], 0x01, &c);            /* # = wave - 1            */
     if (a != 0) {
-        WHITE = a;                              /* the counter             */
-        XINCL = 0x00;                           /* the mines stay          */
+        TEMP1 = a;                              /* the counter             */
+        KLMOFF = 0x00;                           /* the mines stay          */
         do {                                    /* _76                     */
             initiate_killer_mine();
-            WHITE--;
-        } while (WHITE != 0);
+            TEMP1--;
+        } while (TEMP1 != 0);
     }
 
     /* _80 */
     a = WAVE;
     y = a;                                      /* an extra copy of A      */
-    x = KLMINC;
+    x = DIFF;
     if ((uint8_t)(a & WAVET(0x5BB1 + x)) == 0) {     /* every N'th wave    */
         c = 0;
         a = adc8(g.ram[0xD7], WAVET(0x5BA5 + x), &c);
@@ -2692,7 +2692,7 @@ start:                                          /* L5A01 _1                */
             g.ram[0xD7] = a;
             a = (uint8_t)(a ^ 0xFF);
             a = adc8(a, 0x01, &c);              /* the carry was clear     */
-            DIFCTY = a;                         /* the max negative too    */
+            (g.ram[0x00D8]) = a;                         /* the max negative too    */
         }
         /* _81 */
         a = y;
@@ -2775,9 +2775,9 @@ void copy_attributes_of_rock(uint8_t x, uint8_t y)
     OVY(x) = a;
     OVY(x) = a;
     a = OST(y);                                 /* copy the picture        */
-    if (!NEG(SAUMIN)) {                         /* random rocks?           */
-        WHITE = (uint8_t)(a & 0x07);            /* save the size           */
-        a = (uint8_t)(l80_random_wave0(x, y) | WHITE);   /* a new pic      */
+    if (!NEG(ATSTG)) {                         /* random rocks?           */
+        TEMP1 = (uint8_t)(a & 0x07);            /* save the size           */
+        a = (uint8_t)(l80_random_wave0(x, y) | TEMP1);   /* a new pic      */
     }
     OST(x) = a;
     new_random_velocity_using(x, y);
@@ -2807,7 +2807,7 @@ void new_random_velocity_using(uint8_t x, uint8_t y)
 
 /* Newve3 ($5B8D) / Newve5 ($5B94) / Newve7 ($5B9A): the band clamps.
  * $D5 = the minimum positive speed, $D6 = the minimum negative, $D7 = the
- * maximum positive, DIFCTY ($D8) = the maximum negative. */
+ * maximum positive, $00D8 ($D8) = the maximum negative. */
 static uint8_t newve3(uint8_t a)
 {
     if (a >= g.ram[0xD6]) a = g.ram[0xD6];      /* at least 1/2            */
@@ -2831,7 +2831,7 @@ static uint8_t positive_resulults(uint8_t a)
 {
     if (!NEG(a))
         return newve5(a);                       /* positive results        */
-    if (a < DIFCTY) a = DIFCTY;                 /* within range            */
+    if (a < (g.ram[0x00D8])) a = (g.ram[0x00D8]);                 /* within range            */
     return newve3(a);
 }
 
@@ -2874,13 +2874,13 @@ static uint8_t search_for_free_rock(void)
  *   in   FOURPI = the victim's object index (the ROM's LDY FOURPI);
  *        OWNER ($38E) = the player who gets the points (bit 7 = nobody).
  *   out  nothing (both call sites are tail JMPs).
- *   RAM  WHITE ($07) = the victim, YTOP ($18) = its picture code - both
+ *   RAM  TEMP1 ($07) = the victim, TEMP9 ($18) = its picture code - both
  *        oracle-visible scratch.
  * The two callers are DestructionDuringCollision's exits at $44E5 and
  * $4689 (objects.c above).  AlsoUsedFromBelow ($6553) is a shared RTS.
  *
  * The explosion/popsn (x_in, y_in) values are the live 6502 X/Y that the
- * sound triggers park in TEMP5/TEMP6.  On the search-failure paths X is
+ * sound triggers park in TEMPA/TEMPB.  On the search-failure paths X is
  * exactly $FF (Searc1's exhausted exit) and on the full-split path it is
  * the second fragment's slot; on the paths that pass through
  * AddPointsToScore, X is that routine's leftover and OWNER is the
@@ -2910,7 +2910,7 @@ void split_rock_into_fragments(void)
     }
 
     /* _5: a rock (y = 0..$10) */
-    WHITE = y;                                  /* L6578 STY WHITE         */
+    TEMP1 = y;                                  /* L6578 STY TEMP1         */
     x = OWNER;                                  /* L657A LDX OWNER         */
     if (!NEG(x)) {                              /* L657D BMI _7: no ship   */
         amount_add_routine_limits(0x10);        /* L657F: 2 seconds a rock */
@@ -2923,15 +2923,15 @@ void split_rock_into_fragments(void)
 
     /* _7: halve the size, keep the picture code */
     a = OST(y);                                 /* L6595 LDA $0097,Y       */
-    YTOP = (uint8_t)(a & 0x38);                 /* L6599/9B: save pic code */
+    TEMP9 = (uint8_t)(a & 0x38);                 /* L6599/9B: save pic code */
     a = (uint8_t)((a & 0x07) >> 1);             /* L659E/A0: the new size  */
     x = a;                                      /* L65A1 TAX: score index  */
-    a |= YTOP;                                  /* L65A2 ORA YTOP          */
+    a |= TEMP9;                                  /* L65A2 ORA TEMP9          */
 
     /* _10 */
     OST(y) = a;                                 /* L65A4: new pic or empty */
     add_points_to_score(obj_rock_points[x]);    /* L65A7/AA (+ 10K check)  */
-    y = WHITE;                                  /* L65AD LDY WHITE         */
+    y = TEMP1;                                  /* L65AD LDY TEMP1         */
 
     /* _20 */
     a = (uint8_t)(OST(y) & 0x07);               /* L65AF/B2: only the size */
@@ -2939,7 +2939,7 @@ void split_rock_into_fragments(void)
         x = OWNER;      /* X = AddPointsToScore's leftover - see above     */
         goto explode_90;                        /* the rock disappeared    */
     }
-    if (NEG(SAUMIN)) {                          /* L65B6/B8: special attract */
+    if (NEG(ATSTG)) {                          /* L65B6/B8: special attract */
         a >>= 1;                                /* L65BA LSR: a little one? */
         if (a == 0) {
             x = OWNER;  /* X = AddPointsToScore's leftover - see above     */
@@ -3047,7 +3047,7 @@ void game23_shields(uint8_t x)
 /* Temp3WhichPlayer0 ($5C24): draw one score area - three BCD digit pairs
  * plus a phantom zero, then, unless PL0SCFLAG bit 6 says the lives live
  * elsewhere, one ship glyph per remaining life.  a = the zero-page
- * address of the three score bytes; XCOMP = the area index (0/1/2); the
+ * address of the three score bytes; TEMP3 = the area index (0/1/2); the
  * list pointer and UPDOWN are staged by the caller (display.c). */
 void temp3_which_player0(uint8_t a)
 {
@@ -3055,10 +3055,10 @@ void temp3_which_player0(uint8_t a)
 
     save_input_parameters(a, 0x03, 1);          /* 3 digit pairs, zero supp */
     (void)display_digit(0x00);                  /* add a phantom 0         */
-    x = XCOMP;
+    x = TEMP3;
     if (NEG((uint8_t)(g.ram[A_PL0SCFLAG + x] << 1)))
         return;                                 /* _80: hues are fine      */
-    if (NEG(LASTSW)) {                          /* combined lives          */
+    if (NEG(TOGCOMB)) {                          /* combined lives          */
         if (x != 0x02)
             goto rtsl;                          /* _70: no individual lives */
         x = 0x00;                               /* check player 0's lives  */
@@ -3066,7 +3066,7 @@ void temp3_which_player0(uint8_t a)
     a = g.ram[0x47 + x];                        /* _30                     */
     if (a == 0 || NEG(a))
         goto rtsl;                              /* _40 / _70               */
-    WHITE = a;                                  /* _50: the glyph count    */
+    TEMP1 = a;                                  /* _50: the glyph count    */
     if (ZP_34 == 0x03)
         UPDOWN = ZP_34;                         /* game 3: never flipped   */
     xx = 0xA8;                                  /* _51                     */
@@ -3077,7 +3077,7 @@ void temp3_which_player0(uint8_t a)
     }
     vg_add2(ac, xx);                            /* _55                     */
     do {                                        /* _60                     */
-        y = XCOMP;
+        y = TEMP3;
         if (NEG(UPDOWN)) {
             ac = VROM(0x30B1 + y);              /* the flipped ship glyph  */
             xx = VROM(0x30B3 + y);
@@ -3086,8 +3086,8 @@ void temp3_which_player0(uint8_t a)
             xx = VROM(0x30AF + y);
         }
         vg_add2(ac, xx);                        /* _65                     */
-        WHITE--;
-    } while (WHITE != 0);
+        TEMP1--;
+    } while (TEMP1 != 0);
 rtsl:                                           /* _70                     */
     vg_add_rtsl();
 }
@@ -3098,7 +3098,7 @@ rtsl:                                           /* _70                     */
 
 /* InitiateKillerMine ($672D): find a free killer-mine slot ($B0-$B5 =
  * objects $19-$1E), point it at a ship, drop it on one edge at a random
- * position and load its speed / turn rate from the KLMINC-indexed ramps
+ * position and load its speed / turn rate from the DIFF-indexed ramps
  * at $6CD9 (game 1, games 2&3, game 0).  Only in a game ($35 bit 7);
  * Inexit ($672C) is the shared RTS. */
 void initiate_killer_mine(void)
@@ -3122,10 +3122,10 @@ void initiate_killer_mine(void)
             y++;                                /* even mines -> ZSHIP+1   */
     }
     g.ram[A_KTARGET + x] = y;                   /* _29                     */
-    TEMP4 = x;                                  /* save X                  */
-    a = (uint8_t)((KLMINC ^ 0xFF) & 0x03);      /* the offset into the table */
+    TEMP10 = x;                                  /* save X                  */
+    a = (uint8_t)((DIFF ^ 0xFF) & 0x03);      /* the offset into the table */
     c = 0;
-    y = adc8(a, TEMP4, &c);                     /* plus the mine offset    */
+    y = adc8(a, TEMP10, &c);                     /* plus the mine offset    */
     g.ram[0xC9 + x] = 0x01;                     /* the start colour (blue) */
     g.ram[0x02CE + x] = sd_hw_pokey_random(0);  /* a random start point    */
     g.ram[0x0300 + x] = sd_hw_pokey_random(1);
@@ -3136,7 +3136,7 @@ void initiate_killer_mine(void)
         g.ram[0x0300 + x] = a;                  /* _31                     */
 
     /* _32 */
-    if (NEG(LASTSW)) {                          /* combined lives: 2 & 3   */
+    if (NEG(TOGCOMB)) {                          /* combined lives: 2 & 3   */
         g.ram[0x00B0 + x] = KMT(0x6CEB + y);    /* SpeedTableSpaceStation  */
         a = KMT(0x6CF4 + y);                    /* AngleChangeSpeedSpace   */
     } else if (ZP_34 != 0) {                    /* _30: game 1 only        */

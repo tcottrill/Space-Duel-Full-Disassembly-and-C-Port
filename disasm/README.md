@@ -120,7 +120,7 @@ are disassembled by different code paths in the tools for that reason.
 |---|---|
 | `spaceduel_program_rom.asm` | the program ROM `$4000-$8FFF` (20,480 bytes) as Ophis assembler source: `.include`s the defines, `.org $4000`, an `Lxxxx` address label on every line, Atari's own comments on the instructions they were written against. Every instruction is re-encoded and byte-compared against the ROM: **0 mismatches** |
 | `spaceduel_vector_rom.asm` | the vector ROM `$2800-$3FFF` (6,144 bytes), split by data format: the 34-entry ship-picture pointer table and the 34 pictures as `.byte` (dy,dx) records, then the AVG display lists decoded opcode by opcode with every shape named. Read back and compared: **6,144 of 6,144 bytes, 0 mismatches** |
-| `spaceduel_defines.asm` | the memory map as a standalone glossary: 281 aliases — the hardware registers with descriptive names, and every RAM cell under Atari's own identifier, recovered from the `.BLKB` declarations in `ASTRD2.MAC` and the equates in `AS2DEC.MAC` |
+| `spaceduel_defines.asm` | the memory map as a standalone glossary: 280 aliases — the hardware registers with descriptive names, and every RAM cell under Atari's own identifier, recovered from the `.BLKB` declarations in `ASTRD2.MAC` and the equates in `AS2DEC.MAC`, each with a one-line description of what it holds (`var_docs.py`) |
 | `vec_names.py` | 132 named vector objects with their vector and reference counts, 3 of which still carry a `SHAPE_xxxx` placeholder |
 | `shapes_preview.html` | 186 shape canvases — every vector object drawn, the visual index for reviewing the vector ROM |
 
@@ -135,6 +135,33 @@ the short form, so those are emitted as raw `.byte` with the intended
 mnemonic in the comment. In the vector ROM, 1,528 AVG entries round-trip
 through the macro encodings exactly and **3 do not**; those three are
 emitted as raw `.word`, again with the decoded meaning in the comment.
+
+### The zero-page map was 9 bytes high
+
+Worth knowing if you have an older copy of the listing. `rammap.py` walks
+`ASTRD2.MAC` accumulating a location counter, and it used to count the
+`.BYTE` and `.WORD` lines that sit *inside* `.MACRO` … `.ENDM` definition
+bodies. A macro definition emits nothing where it is written, only where
+it is called, and four such lines precede the page 0 declarations —
+`ASTRD2.MAC` lines 187 and 190 in `VCTRSC`, 238 in `COLOR`, 260 in
+`MULBLD`, 2+4+2+1 = 9 bytes. Every page 0 and page 1 variable therefore
+landed 9 bytes too high: `VGBRIT` at `$09` instead of `$00`, `SCORE` at
+`$43` instead of `$3A`, `OBJ` at `$A0` instead of `$97`. The page 2/3,
+vector RAM and vector ROM sections open with their own `.=` origins and
+were never affected, nor were the hardware equates.
+
+The ROM itself is the check. `Add2WordsToVector` ($8EA5) stores through
+`STA (VGLIST),Y` and carries with `INC` on the byte above, and the bytes
+say `$01`/`$02`; `BIT $35 / BPL` guards thrust with Atari's own comment
+`NO PICTURE OF THRUST DURING ATTRACT`, so `ATRACT` is `$35`. Both agree
+with the hand-walked layout, at every one of the ~290 instruction sites
+that reference a page 0 name from `ASTRD2.MAC`.
+
+Two long-standing puzzles in the C port's notes dissolved with the fix:
+the "3-byte live score staged under `INTRPT`/`SYNC`" is just `SCORE`, and
+the `$DA/$DB/$DC` read as "`$DD/$DE/$DF` minus 3" is just `HSCORE-3`.
+Names in the listing shifted accordingly; nothing about the decoded bytes
+changed, and `verify.py` still reports 0 mismatches.
 
 ## Tools
 
@@ -154,13 +181,14 @@ emitted as raw `.word`, again with the decoded meaning in the comment.
 | `solve_bases.py` | solves each module's link base definitively, rather than by fixed-point iteration that can settle on a preamble-sized error |
 | `sweep_free.py` | anchor-free base sweep: pick the base that simply locks best, since an anchor taken from a repeated mnemonic run can itself be wrong |
 | `build_map.py` | builds the consolidated source-line → ROM-address map for the whole game |
-| `rammap.py` | recovers the RAM and zero-page variable layout by walking the source's `.BLKB` runs |
+| `rammap.py` | recovers the RAM and zero-page variable layout by walking the source's `.BLKB` runs, skipping `.MACRO` bodies (see “The zero-page map was 9 bytes high” below) |
 | `naming.py` | turns Atari's 6-character labels into descriptive names, from the `.SBTTL` prose where there is any |
 | `encode.py` | encodes a 6502 instruction so every emitted line can be byte-checked |
 | `emit.py` | emits the annotated program ROM in Ophis syntax; a line is written from the source mapping only when re-encoding reproduces the ROM bytes |
 | `verify.py` | reads the emitted listing back, re-encodes each line at the address its label states, and compares against the ROM |
 | `emit_ca65.py` | translates the Ophis listing to ca65 syntax for the third-party assembler check |
 | `emit_defines.py` | emits `spaceduel_defines.asm` |
+| `var_docs.py` | what each RAM variable is for — the prose the defines file carries as comments |
 | `avg.py` | AVG decoder — 13-bit two's-complement deltas, `SCAL`, `STAT`, `JSRL`, verified against real interpreters |
 | `vecmap.py` | maps Atari's own vector and picture labels onto vector-ROM addresses |
 | `shippix.py` | ship pictures decoded and drawn exactly as `SHPDISPLAYS` draws them |

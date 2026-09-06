@@ -16,7 +16,7 @@ self-test). Channel X (15..0) owns four RAM cells:
 
 | cells | role |
 |---|---|
-| `$56+X` | script pointer, 0 = idle. `$56` is YINCL in the defines; the named cells TOGGLE `$58`, TOGDRONE `$5A`, TOGCOMB `$5B`, SCRFUL `$5C`, KLMOFF `$5D`, TSTBYTE `$5E`, POINT `$5F`, MXSPKT `$60` are simply channels 2,4,5,6,7,8,9,10 of this array (e.g. ForceFieldUp tests TOGDRONE = channel 4 = AUDF3's script) |
+| `$56+X` | script pointer, 0 = idle. This is POINT, 16 channels at `$56-$65`. Under the old RAM map these cells carried the names TOGGLE/TOGDRONE/TOGCOMB/SCRFUL/KLMOFF/TSTBYTE, which made the array look like it was overlapping unrelated flags; it is not, they are just channels 2 and 4-9 (e.g. ForceFieldUp tests POINT+4 = channel 4 = AUDF3's script). The one name still landing inside the array is the constant MXSPKT, whose value $60 is POINT+10 |
 | `$66+X` | current register value (AUDF for even X, AUDC for odd X) |
 | `$76+X` | steps left in the current script entry |
 | `$86+X` | IRQ ticks left in the current step |
@@ -35,7 +35,7 @@ Script format: entry = 4 bytes at `$719B + pointer*2`; the ROM's `ASL`
 carry selects base $719B or $729B, i.e. one seamless 9-bit address space
 (bank1 base = bank0 base + $100), which is how the C code indexes it.
 Bytes: +0 value, +1 tick count, +2 per-step delta, +3 step count. Pointer
-advances by 2 per entry (`INC YINCL,X` twice). Tick count 0 terminates;
+advances by 2 per entry (`INC POINT,X` twice). Tick count 0 terminates;
 then value byte != 0 is a restart pointer (looping) — but **no shipped
 script uses it**: every terminator in $71A0-$72B8 is $00,$00 (checked
 2026-08-30; see SOUNDS.md). Continuous sounds (thrust/shield/fuse) are
@@ -79,7 +79,7 @@ voices 2+3 (ch12-15).
 ## Register protocols (sound)
 
 - **Trigger stubs / high_score_tune / badhab**: A = code (parameter). The
-  ROM parks the caller's live X/Y in TEMP5/TEMP6 (`$1C/$1D`) and restores
+  ROM parks the caller's live X/Y in TEMPA/TEMPB (`$1C/$1D`) and restores
   them; registers survive but the RAM stores are oracle-visible, so the C
   signatures take `(x_in, y_in)` = the caller's live 6502 X/Y and callers
   must pass them. In plain attract (no HSCFLG) nothing is stored at all.
@@ -97,7 +97,7 @@ voices 2+3 (ch12-15).
   POKEY2 AUDCTL=1, hum divider SFREQ steps down (pitch up) to $30 every 8th
   frame (`$44 & 7`), AUDF2/AUDC2 = SFREQ/$A3; else AUDF2/AUDC2/AUDCTL2/SFREQ
   cleared. Both paths echo on POKEY1 AUDF3/AUDC3 (value+1, tone; off path
-  writes 0/0 via the $FF+1 wrap) unless channel 4 (TOGDRONE) is scripted.
+  writes 0/0 via the $FF+1 wrap) unless channel 4 (POINT+4) is scripted.
 - **always_remains_same_both**: called from Pictur ($5D71) with X = object
   index $1F; X stack-preserved (register only), A/Y clobbered. No-op unless
   SUPRSAC bit 7. Copies saucer object $1F -> $20 (OBJXL/OBJXH/OBJYL/OBJYH/
@@ -116,14 +116,14 @@ X=2,1,0; IN0 is re-read from the seam for **every** mech and again for the
 slam check, matching the ROM's read count. Coin bit for mech X = IN0 bit
 (2-X) (X=0 left mech = d2, X=1 center = d1, X=2 right = d0), 1 = absent;
 slam = d3, 1 = off. **Oracle polarity trap** (NOTES_oracle.md): idle-low
-IN0 makes the slam look active, so TEMPA is reloaded $F0 every IRQ and
+IN0 makes the slam look active, so $0025 is reloaded $F0 every IRQ and
 `$2D-$2F`/`$2A-$2C` are cleared every pass - reproduced, do not "fix".
 
 Per-mech debounce on `$2D+X` (InstructionsBracketsAreIllustration $7428):
 
 1. Coin present (bit low): the d0-d4 down-counter runs from $1F - fast
    (every IRQ) for the first five samples ($1F..$1B), then once per 8 IRQs
-   (`TEMP9 & 7 == 7`); sticks at 0 (validated).
+   (`ZSHIP & 7 == 7`); sticks at 0 (validated).
 2. Coin absent: status >= $1B means the coin was on < 5 samples - reset to
    $1F. Otherwise the d5-d7 coin-off up-counter is bumped (+$20); when it
    wraps: result 0 = coin held too long, reset; nonzero = **valid coin** -
@@ -131,20 +131,20 @@ Per-mech debounce on `$2D+X` (InstructionsBracketsAreIllustration $7428):
    was already running, credit is granted immediately ("Howie's
    assumption"); otherwise the credit lands when the $78 timer expires in
    step 4 (slam protection window after the coin).
-3. Slam: d3 low reloads pre-coin timer TEMPA=$F0; while TEMPA runs it is
+3. Slam: d3 low reloads pre-coin timer $0025=$F0; while $0025 runs it is
    decremented and coin status + post-coin timers are zeroed (coins during
    slam ignored).
 4. Post-coin timer `$2A+X` decrement; hitting 0 = the coin counts.
-5. A counted coin adds units+1 to TEMP10 (bonus accumulator) and TEMPB
+5. A counted coin adds units+1 to $0022 (bonus accumulator) and $0026
    (CNCT): left mech 1 unit, center 1/2 (ZMINE d4), right 1/4/5/6
    (ZMINE d2-d3), and `INC $27+X` queues an EM coin-counter pulse.
 
 Then fall-through chain (all internal, no external callers - verified by
 grep, so static functions in C): GetBonusAdderMode ($74B3, bonus coins per
 NumberUnitCoinsRequired[$74CF], mode 3 pays 2) -> Extb ($74D7, unit-coins ->
-credits TEMP8: price 1/1/2 for modes 1/2/3, mode 1 pays 2 credits, ZPAIR
-bonus coins cover shortfalls; mode 0 free play stores 0 to TEMPB) -> Ext
-($74FA: INC TEMP9; every second call runs the EM pulse cells `$27-$29`,
+credits DIAGBI: price 1/1/2 for modes 1/2/3, mode 1 pays 2 credits, ZPAIR
+bonus coins cover shortfalls; mode 0 free play stores 0 to $0026) -> Ext
+($74FA: INC ZSHIP; every second call runs the EM pulse cells `$27-$29`,
 low nibble = pulses pending, high nibble = on-time, at most one pulse
 running at a time). The `$741C` entry is only the ROM's own mech-loop
 re-entry (`L74B0 JMP L741C`) - no separate C function (`sub_741c` not
@@ -152,9 +152,11 @@ needed; irq.c's `coin_routine` extern is the $741A entry).
 
 ## Extern list (what these modules import)
 
-- `sd_state.h`: `g`, macros SUPRSAC, SUPRTIM, SUPRDIS, YTOP, COMTIMER,
-  SFREQ, HSCFLG, ZP_35, ZP_44, TEMP5, TEMP6, TEMP8, TEMP9, TEMP10, ZPAIR,
-  ZMINE, TEMPA, TEMPB, A_TEMPC, LANGBT (caller side).
+- `sd_state.h`: `g`, macros SUPRSAC, SUPRTIM, SUPRDIS, TEMP9, COMTIMER,
+  SFREQ, HSCFLG, ZP_35, ZP_44, TEMPA, TEMPB, DIAGBI, ZSHIP, ZPAIR, ZMINE,
+  LANGBT, and the coin cells the defines cannot name because Atari spelled
+  them with a `$` sigil: $0022 ($BCCNT), $0025 ($LMTIM), $0026 ($CNCT),
+  $0027 ($CCTIM) (caller side).
 - `sd_hw.h`: `sd_hw_pokey_write(which, reg, val)` (reg $0-$F: 0/2/4/6
   AUDF1-4, 1/3/5/7 AUDC1-4, 8 AUDCTL, $F SKCTL), `sd_hw_in0()`.
 - `sound_data.h`: `sd_sndrom[]` / `SNDROM(addr)`.
@@ -173,21 +175,21 @@ values, `$76-$85` step counters, `$86-$95` tick counters, `$96` interlock;
 `$2A-$2C` post-coin slam timers, `$2D-$2F` coin status (aliases ZP1MIN
 $2C / ZLAST $2F in the defines are unrelated names for the same bytes);
 object-array cells `$21F/$220, $2D4/$2D5, $2D9-$2DC, $306/$307, $33F/$340,
-$344-$347, $371/$372` (OBJ* + $1F/$20/$24-$27).
+$344-$347, $371/$372` ($00A0* + $1F/$20/$24-$27).
 
 ## Open questions
 
 1. **Trigger-stub X/Y parameters**: the `(x_in, y_in)` protocol is the
-   faithful reading of Badhab's TEMP5/TEMP6 parks, but it forces every
+   faithful reading of Badhab's TEMPA/TEMPB parks, but it forces every
    caller module to know its live X/Y at the call site. If oracle diffs
-   show TEMP5/$1C-TEMP6/$1D always overwritten again before a frame
+   show TEMPA/$1C-TEMPB/$1D always overwritten again before a frame
    snapshot, the orchestrator may prefer to drop the parameters and mask
    the cells instead.
 2. `LDA $707F,X` (AlwaysRemainsSameBoth) is byte-exact for any
    SUPRDIS <= $FF via the blob; the Time table proper is 14 entries at
    $7083, implying SUPRDIS in 4..17. Not yet confirmed against the
    saucer-logic module that sets SUPRDIS.
-3. Extb's mode-0 path stores 0 to TEMPB despite the "DO NOTHING" comment
+3. Extb's mode-0 path stores 0 to $0026 despite the "DO NOTHING" comment
    (free play clears CNCT every IRQ) - translated as coded.
 4. GetBonusAdderMode's closing `BNE Extb` is a BRA that assumes
    `INC ZPAIR` left A/flags nonzero; if ZPAIR ever wrapped to 0 the 6502

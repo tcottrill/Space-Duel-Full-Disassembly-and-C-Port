@@ -12,13 +12,13 @@ execute in attract (per `tests/ref/coverage_attract.md`).
 | `Mesgpos` | $7760 | A = dx, X = dy | JSRL word $AF61 (CPU $3EC2 message-origin stub) + dark VCTR A,X |
 | `VectorGeneratorMessageProcessor` | $7770 | Y = message # | color $D6 (yellow) then message |
 | `Brightness` | $7772 | X = color byte, Y = message # | TXA -> PassColor |
-| `PassColor` | $7773 | A = color byte, Y = message # | POKRAN=Y; STAT $64/A; message |
-| `VectorMessage5` | $7779 | Y = message # | POKRAN=Y; color $D2 (green); message |
-| `VectorMessage7` | $777D | Y = color byte, **POKRAN = message #** | STAT word, then VectorMessage6(POKRAN) |
+| `PassColor` | $7773 | A = color byte, Y = message # | TEMP2=Y; STAT $64/A; message |
+| `VectorMessage5` | $7779 | Y = message # | TEMP2=Y; color $D2 (green); message |
+| `VectorMessage7` | $777D | Y = color byte, **TEMP2 = message #** | STAT word, then VectorMessage6(TEMP2) |
 | `VectorMessage6` | $7782 | Y = message #; reads $D1 | decodes + emits whole message, advances list ptr by total bytes |
 | `VectorMessage0` | $77CD | Y = list byte count + 1 spent | DEY; AddY1ToVector (ptr += Y) |
-| `UpdateIndirectPointerCharacters` | $77D1 | A = raw code | INC WHITE (carry into EACE), fall into VectorMessage2 |
-| `VectorMessage2` | $77D7 | A = raw shifted code, Y = list offset | code&$3E==0: purge return -> VectorMessage0. Else pokes glyph word at (BLUE),Y and Y+1, Y+=2, X=0. **Carry out = UPDOWN bit 7** (ASL at $77E9) |
+| `UpdateIndirectPointerCharacters` | $77D1 | A = raw code | INC TEMP1 (carry into EACE), fall into VectorMessage2 |
+| `VectorMessage2` | $77D7 | A = raw shifted code, Y = list offset | code&$3E==0: purge return -> VectorMessage0. Else pokes glyph word at (VGLIST),Y and Y+1, Y+=2, X=0. **Carry out = UPDOWN bit 7** (ASL at $77E9) |
 
 Call sites checked: $408F/$4096, $416D/$4175, $427F/$4284/$428B, $4D74-$4DB5
 (Getin4), $506D, $5C98-$5CA4, $6037-$604F, $6072/$607D, $7555/$7586/$75AD/
@@ -26,7 +26,7 @@ $75B2, $75F9/$760B, $7661/$7668, $8CEC.
 
 ## Y (list offset) tracking — the byte-exact pointer contract
 
-VectorMessage2 writes glyph words at successive `(BLUE),Y` offsets **without
+VectorMessage2 writes glyph words at successive `(VGLIST),Y` offsets **without
 advancing** the list pointer; Y accumulates 2 per character across the whole
 message. Termination (either the $77CB stop-flag path or the code-0 purge
 path) runs VectorMessage0: `DEY` then `AddY1ToVector` -> pointer += (Y-1)+1 =
@@ -40,10 +40,10 @@ faithful to the 6502 carry.
 Each byte pair B0,B1 = three 5-bit character codes + stop flag (5+5+5+1):
 
     char1 = B0[7:3]           A = B0>>2, AND #$3E in VectorMessage2
-    char2 = B0[2:0]:B1[7:6]   ROL A / ROL POKRAN / ROL A / LDA POKRAN /
+    char2 = B0[2:0]:B1[7:6]   ROL A / ROL TEMP2 / ROL A / LDA TEMP2 /
                               ROL A / ASL chain
     char3 = B1[5:1]           A = B1, AND #$3E
-    B1[0] = 1 -> last pair    LSR POKRAN / BCC loop
+    B1[0] = 1 -> last pair    LSR TEMP2 / BCC loop
 
 `AND #$3E` yields code*2 directly (the glyph-word table index). Code 0 =
 early terminator. Codes 1-4 index $3248+2c (blank,'0','1','2'); codes >= 5
@@ -75,19 +75,21 @@ chain literally, carry included.
 The split at `CPY #$15` ($7786): Y>=$15 sets carry, `ADC #$01` turns lang*4
 into lang*4+2, and Y-$15 indexes the second bank's offset table. Each table
 entry is the byte offset from the **table base** to the message's first
-packed byte (`CLC / ADC (WHITE),Y` at $779F, base kept in WHITE/EACE =
+packed byte (`CLC / ADC (TEMP1),Y` at $779F, base kept in TEMP1/EACE =
 $07/$08). Bank-0 tables have 21 entries; bank-1 sizes differ per language
 (English 18, Spanish 4 — data-driven, no stored count). Data ends at $7D04
 ($7D05-$7FFF is $00 fill).
 
 ## Scratch RAM reproduced
 
-- `WHITE` $07 / `EACE` $08 — text pointer (final value = 1 past the
+- `TEMP1` $07 / `EACE` $08 — text pointer (final value = 1 past the
   message's last byte).
-- `POKRAN` $0A — message number, then per-pair shift scratch; final value =
+- `TEMP2` $0A — message number, then per-pair shift scratch; final value =
   last B1 >> 1.
-- `g.ram[0xD1]` — language 0-3 (unnamed; written by Gtoptn $7701, forced 0
-  = English by self-test $8A2A/$8AED; distinct from `LANG` $DA).
+- `g.ram[0xD1]` — language 0-3. This is `LANG`: the old RAM map put `LANG`
+  at $DA, which is why this cell read as unnamed and the note here used to
+  call it "distinct from LANG". Written by Gtoptn $7701, forced 0 = English
+  by self-test $8A2A/$8AED. ($DA is `HSCORE`-3, the shift-down source slot.)
 
 ## Generated data
 

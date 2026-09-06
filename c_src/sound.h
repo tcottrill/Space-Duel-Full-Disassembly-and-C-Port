@@ -3,9 +3,9 @@
  * Register protocols (derived from all call sites; see NOTES_soundcoins.md):
  *
  * - The trigger stubs ($72B9-$72EF) and high_score_tune/badhab park the
- *   caller's live 6502 X and Y in TEMP5/TEMP6 ($1C/$1D) before the channel
- *   scan and restore them after (Badhab $72FA: STX TEMP5 / STY TEMP6 ...
- *   LDX TEMP5 / LDY TEMP6). The registers themselves are preserved, but the
+ *   caller's live 6502 X and Y in TEMPA/TEMPB ($1C/$1D) before the channel
+ *   scan and restore them after (Badhab $72FA: STX TEMPA / STY TEMPB ...
+ *   LDX TEMPA / LDY TEMPB). The registers themselves are preserved, but the
  *   RAM stores are oracle-visible, so every trigger takes the caller's X/Y
  *   as (x_in, y_in) and the C caller must pass its live values. A is
  *   clobbered (it carries the sound code).
@@ -31,7 +31,7 @@ void l2_saucers(void);
 
 /* RandomFuzz ($6B45): 1-in-8 fuse crackle for the surviving rigid-pair
  * ship.  Reads POKEY1 RANDOM on every call; x_in/y_in are the caller's
- * live 6502 X/Y (they reach TEMP5/TEMP6 through the FusePlyr trigger). */
+ * live 6502 X/Y (they reach TEMPA/TEMPB through the FusePlyr trigger). */
 void random_fuzz(uint8_t x_in, uint8_t y_in);
 
 /* StopFuseSound ($6B57): stop the fuse - channels 0/1/6/7 script pointers
@@ -76,7 +76,7 @@ void inisou(void);
 
 /* ForceFieldUp ($73D4): mainline force-field hum / drone ($4107). Drives
  * POKEY2 AUDF2/AUDC2 + AUDCTL and POKEY1 AUDF3/AUDC3 (unless sound
- * channel 4 ($5A, alias TOGDRONE) is scripted). Clobbers A/X/Y. */
+ * channel 4 ($5A, alias $005A) is scripted). Clobbers A/X/Y. */
 void force_field_up(void);
 
 #endif /* SOUND_H */

@@ -304,7 +304,7 @@ whether Atari intended it to be visible is not decidable from the data.
 
 | file | covers | verification |
 |---|---|---|
-| `spaceduel_defines.asm` | 281 hardware and RAM aliases | — |
+| `spaceduel_defines.asm` | 280 hardware and RAM aliases, each described | page 0/1 addresses cross-checked against ~290 instruction sites in the ROM |
 | `spaceduel_program_rom.asm` | `$4000-$8FFF`, 20,480 bytes | own encoder **0 mismatches**; `ca65` + `ld65` **0 mismatches** |
 | `spaceduel_vector_rom.asm` | `$2800-$3FFF`, 6,144 bytes | 1,528 AVG entries re-encoded exactly, 3 emitted as raw `.word` with the decoded meaning; read-back **6,144/6,144 bytes, 0 mismatches** |
 | `vec_names.py` | 132 vector objects with vector and reference counts, 3 of them still `SHAPE_xxxx` placeholders | — |

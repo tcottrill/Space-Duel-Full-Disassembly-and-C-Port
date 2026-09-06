@@ -2,14 +2,14 @@
  *
  * Draws the language-selected packed messages (see msgs.h for the message
  * numbering and the 3-characters-per-2-bytes encoding). Glyph JSRL words
- * are poked at successive (BLUE),Y offsets WITHOUT advancing the list
+ * are poked at successive (VGLIST),Y offsets WITHOUT advancing the list
  * pointer; Y is tracked across the whole message and the final
  * DEY / JMP AddY1ToVector advances the pointer once by the exact byte
  * count - modeled here with vg_poke_list()/vg_advance_list() so the
  * pointer arithmetic stays byte-identical to the ROM.
  *
- * Scratch RAM used (all reproduced): WHITE $07 / EACE $08 = the indirect
- * text pointer, POKRAN $0A = saved message number, then per-pair shift
+ * Scratch RAM used (all reproduced): TEMP1 $07 / EACE $08 = the indirect
+ * text pointer, TEMP2 $0A = saved message number, then per-pair shift
  * scratch. Language register: g.ram[0xD1].
  */
 #include "sd_state.h"
@@ -17,7 +17,7 @@
 #include "sd_vecrom.h"
 #include "msgs.h"
 
-/* LDA abs,X / LDA (WHITE,X) over the module's ROM span. The WHITE/EACE
+/* LDA abs,X / LDA (TEMP1,X) over the module's ROM span. The TEMP1/EACE
  * pointer and the table indexing only ever land in $7803-$7D04; anything
  * else reads 0 like the open bus would. */
 static uint8_t msg_rom(uint16_t addr)
@@ -28,8 +28,8 @@ static uint8_t msg_rom(uint16_t addr)
     return 0;
 }
 
-/* The 16-bit text pointer the ROM keeps in WHITE (lo) / EACE (hi). */
-#define WPTR() ((uint16_t)(WHITE | ((uint16_t)EACE << 8)))
+/* The 16-bit text pointer the ROM keeps in TEMP1 (lo) / EACE (hi). */
+#define WPTR() ((uint16_t)(TEMP1 | ((uint16_t)EACE << 8)))
 
 /* AuxRoutineAddOffset ($7730): language-dependent X reposition before a
  * message. In: X = table row 0-6 (call sites $4284/$4D7D/$4D8E/$4D9F/
@@ -92,18 +92,18 @@ static int vector_message2(uint8_t a, uint8_t *y)
     return 0;
 }
 
-/* UpdateIndirectPointerCharacters ($77D1): step the WHITE/EACE text
+/* UpdateIndirectPointerCharacters ($77D1): step the TEMP1/EACE text
  * pointer, then emit the character in A via VectorMessage2. */
 static int update_indirect_pointer_characters(uint8_t a, uint8_t *y)
 {
-    WHITE++;                                    /* L77D1 INC WHITE */
-    if (WHITE == 0)
+    TEMP1++;                                    /* L77D1 INC TEMP1 */
+    if (TEMP1 == 0)
         EACE++;                                 /* L77D5 INC EACE  */
     return vector_message2(a, y);
 }
 
 /* VectorMessage6 ($7782): the message processor body. In: Y = message
- * number (POKRAN already holds it when entered through VectorMessage7,
+ * number (TEMP2 already holds it when entered through VectorMessage7,
  * but this entry takes Y directly). Uses g.ram[$D1] = language.
  * Emits every character's glyph word, then advances the list pointer by
  * the total byte count via VectorMessage0. */
@@ -121,12 +121,12 @@ void vector_message6(uint8_t y_msg)
     }
 
     EACE  = msg_rom((uint16_t)(0x7804 + x));    /* L7795 table ptr hi     */
-    WHITE = msg_rom((uint16_t)(0x7803 + x));    /* L779A ptr lo (Language-
+    TEMP1 = msg_rom((uint16_t)(0x7803 + x));    /* L779A ptr lo (Language-
                                                  * TablePointersSee)      */
-    /* L779F CLC / ADC (WHITE),Y: message = table base + offsets[Y] */
+    /* L779F CLC / ADC (TEMP1),Y: message = table base + offsets[Y] */
     {
-        unsigned s = (unsigned)WHITE + msg_rom((uint16_t)(WPTR() + y));
-        WHITE = (uint8_t)s;
+        unsigned s = (unsigned)TEMP1 + msg_rom((uint16_t)(WPTR() + y));
+        TEMP1 = (uint8_t)s;
         if (s > 0xFF)
             EACE++;                             /* L77A6 INC EACE         */
     }
@@ -134,8 +134,8 @@ void vector_message6(uint8_t y_msg)
     y = 0;                                      /* L77A8 LDY #$00 (list   */
                                                 /* offset; X stays 0)     */
     for (;;) {                                  /* VectorMessage6_20      */
-        a = msg_rom(WPTR());                    /* L77AC LDA (WHITE,X)    */
-        POKRAN = a;                             /* L77AE STA POKRAN       */
+        a = msg_rom(WPTR());                    /* L77AC LDA (TEMP1,X)    */
+        TEMP2 = a;                             /* L77AE STA TEMP2       */
         a >>= 2;                                /* L77B0 LSR / LSR        */
         /* char 1 = B0[7:3] */
         if (update_indirect_pointer_characters(a, &y))
@@ -144,16 +144,16 @@ void vector_message6(uint8_t y_msg)
         /* char 2 = B0[2:0]:B1[7:6], assembled by the literal ROL chain.
          * Carry entering the chain = UPDOWN bit 7 (VectorMessage2's ASL);
          * it lands only in a discarded intermediate A. */
-        b1 = msg_rom(WPTR());                   /* L77B5 LDA (WHITE,X)=B1 */
+        b1 = msg_rom(WPTR());                   /* L77B5 LDA (TEMP1,X)=B1 */
         a = b1;
         c = (uint8_t)(UPDOWN >> 7);
         nc = (uint8_t)(a >> 7);                 /* L77B7 ROL A            */
         a = (uint8_t)((a << 1) | c); c = nc;
-        nc = (uint8_t)(POKRAN >> 7);            /* L77B8 ROL POKRAN       */
-        POKRAN = (uint8_t)((POKRAN << 1) | c); c = nc;
+        nc = (uint8_t)(TEMP2 >> 7);            /* L77B8 ROL TEMP2       */
+        TEMP2 = (uint8_t)((TEMP2 << 1) | c); c = nc;
         nc = (uint8_t)(a >> 7);                 /* L77BA ROL A            */
         a = (uint8_t)((a << 1) | c); c = nc;
-        a = POKRAN;                             /* L77BB LDA POKRAN       */
+        a = TEMP2;                             /* L77BB LDA TEMP2       */
         nc = (uint8_t)(a >> 7);                 /* L77BD ROL A            */
         a = (uint8_t)((a << 1) | c); c = nc;
         a <<= 1;                                /* L77BE ASL (carry dead) */
@@ -161,12 +161,12 @@ void vector_message6(uint8_t y_msg)
             break;
 
         /* char 3 = B1[5:1]; B1[0] = stop flag */
-        a = msg_rom(WPTR());                    /* L77C2 LDA (WHITE,X)=B1 */
-        POKRAN = a;                             /* L77C4 STA POKRAN       */
+        a = msg_rom(WPTR());                    /* L77C2 LDA (TEMP1,X)=B1 */
+        TEMP2 = a;                             /* L77C4 STA TEMP2       */
         if (update_indirect_pointer_characters(a, &y))
             break;                              /* pointer now past B1    */
-        c = (uint8_t)(POKRAN & 1);              /* L77C9 LSR POKRAN       */
-        POKRAN >>= 1;
+        c = (uint8_t)(TEMP2 & 1);              /* L77C9 LSR TEMP2       */
+        TEMP2 >>= 1;
         if (c)                                  /* L77CB BCC ..._20       */
             break;
     }
@@ -178,11 +178,11 @@ void vector_message6(uint8_t y_msg)
 /* ------------------------------------------------------------------ */
 
 /* VectorMessage7 ($777D): STAT/COLOR word from Y, then run the message
- * whose number is already parked in POKRAN ($0A). In: Y = color byte. */
+ * whose number is already parked in TEMP2 ($0A). In: Y = color byte. */
 void vector_message7(uint8_t y_color)
 {
     set_vg_status(y_color);                     /* L777D JSR SetVGStatus  */
-    vector_message6(POKRAN);                    /* L7780 LDY POKRAN       */
+    vector_message6(TEMP2);                    /* L7780 LDY TEMP2       */
 }
 
 /* PassColor ($7773): In: A = color byte, Y = message number.
@@ -191,12 +191,12 @@ void vector_message7(uint8_t y_color)
  * $8CEC (self-test exit). */
 void pass_color(uint8_t a_color, uint8_t y_msg)
 {
-    POKRAN = y_msg;                             /* L7773 STY POKRAN       */
+    TEMP2 = y_msg;                             /* L7773 STY TEMP2       */
     vector_message7(a_color);                   /* L7775 TAY / JMP VM7    */
 }
 
 /* Brightness ($7772): In: X = color/brightness byte, Y = message number.
- * Call sites: $428B (X=YTOP fade level), $5CA4 (X=$A7, "BONUS LEVEL"),
+ * Call sites: $428B (X=TEMP9 fade level), $5CA4 (X=$A7, "BONUS LEVEL"),
  * $6043 (X=$C2, "HIGH SCORES", msg 0). */
 void brightness(uint8_t x_color, uint8_t y_msg)
 {
@@ -215,6 +215,6 @@ void vector_generator_message_processor(uint8_t y_msg)
  * Call sites: $607D (1/2 player msg), $760B (select-game msgs). */
 void vector_message5(uint8_t y_msg)
 {
-    POKRAN = y_msg;                             /* L7779 STY POKRAN       */
+    TEMP2 = y_msg;                             /* L7779 STY TEMP2       */
     vector_message7(0xD2);                      /* L777B LDY #$D2         */
 }

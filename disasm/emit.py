@@ -12,17 +12,28 @@ from m6502 import (IMP,ACC,IMM,ZP,ZPX,ZPY,ABS,ABX,ABY,IND,IZX,IZY,REL)
 
 BAD_SYM = re.compile(r"^\.|\$$|^\.\.|^\$")
 
-def clean_symbols(vars_):
-    """Drop macro temporaries and pick one preferred name per address."""
+def clean_symbols(vars_, prefer=None):
+    """Drop macro temporaries and pick one preferred name per address.
+
+    A real storage declaration always beats an equate that merely evaluates to
+    the same address, so $00 is VGBRIT rather than the colour constant BLACK;
+    among equals the shortest name wins. Pass prefer=frozenset() to rank purely
+    by length, as this did before the storage rule existed.
+    """
+    if prefer is None:
+        import rammap
+        prefer = rammap.storage_labels()
     by_addr = {}
     for name, a in vars_.items():
         if BAD_SYM.match(name) or name.startswith("..") or "$" in name:
             continue
         if not re.match(r"^[A-Za-z][A-Za-z0-9_]*$", name):
             continue
+        rank = (0 if name in prefer else 1, len(name), name)
         cur = by_addr.get(a)
-        if cur is None or (len(name), name) < (len(cur), cur):
-            by_addr[a] = name
+        if cur is None or rank < cur[0]:
+            by_addr[a] = (rank, name)
+    by_addr = {a: v[1] for a, v in by_addr.items()}
     # Names must be unique: the verifier inverts this map, and two addresses
     # sharing a name would collapse into one.
     seen = {}

@@ -89,23 +89,23 @@ recognized` line from `VsDevCmd.bat` is noise, not an error.
 
 ## Step 3/4 — the diffs, and the fixes that closed them
 
-### FIX 1 — `NOBJ` ($15): `Newp2` did not return the 6502 Y it leaves
+### FIX 1 — `TEMP7` ($15): `Newp2` did not return the 6502 Y it leaves
 
 *Symptom:* frames 1-4 were otherwise perfect; `$0015` read `$00` in C and
 `$02` in the oracle from the very first frame.
 
 *Evidence:* `oracle.py --trace-write 0x15` showed the only writer during
-attract is `$6FDF STY NOBJ` inside `L80RandomWave0`, called nine times in
+attract is `$6FDF STY TEMP7` inside `L80RandomWave0`, called nine times in
 one boot pass with Y = 0, 9, 8, 7, 6, 5, 4, 3, 2. The caller is
 `NewastStartNewAsteroids_10` (`$5A6A`), whose loop is
 `JSR L80RandomWave0 / ORA #$04 / STA $97,X / JSR Newp2 / DEX / BNE`.
 Y starts at 0 (`$5A54 LDY #$00`) and thereafter is whatever `Newp2` left:
-`Newp2`'s SAUMIN path does `TXA / AND #$0F / TAY` at `$597B-$597E`, i.e.
+`Newp2`'s ATSTG path does `TXA / AND #$0F / TAY` at `$597B-$597E`, i.e.
 Y = X & $0F — which reproduces 9, 8, 7 … 2 exactly. (Coverage confirms only
 that path runs: `Newp2 $5977` has 14 distinct PCs = precisely
 `$5977-$5995`.)
 
-*Fix:* `newp2()` returns its exit Y (`x & 0x0F` on the SAUMIN path, the
+*Fix:* `newp2()` returns its exit Y (`x & 0x0F` on the ATSTG path, the
 incoming y otherwise — `GetNewVelocity`/`NewRandomVelocityUsing` never touch
 6502 Y), and `newast_start_new_asteroids` threads it:
 `y = newp2(x, y);`. `objects.h` updated.
@@ -139,9 +139,9 @@ This one fix took the run from 13 361 mismatched bytes to 637.
 ### FIX 3 — `AddPointsToScore` ($5F68) translated (stub removed)
 
 Translated into `score.c` from the listing, BCD through `sd_bcd.h`
-(`bcd_adc` / `bcd_sbc`), every RAM store reproduced (TEMP5, PL0SCFLAG,OWNER,
-the 3-byte live score `$3A,X`/`$3B,X`/`$3C,X`, YTOP, OPTN1, `$47,X`,
-CMBSCFLAG, EAWRIT/UPDFLG/`$42`, `$47`/`$48`), declared in `score.h`.
+(`bcd_adc` / `bcd_sbc`), every RAM store reproduced (TEMPA, PL0SCFLAG,OWNER,
+the 3-byte live score `$3A,X`/`$3B,X`/`$3C,X`, TEMP9, NXTBON, `$47,X`,
+CMBSCFLAG, CMBSCORE/$0041/`$42`, `$47`/`$48`), declared in `score.h`.
 Its first two instructions (`BIT $35 / BMI`) make it an immediate RTS
 outside a game, so it is behaviourally inert during attract — and
 `coverage_attract.md` shows the ROM never even enters it there. The
@@ -212,12 +212,12 @@ Page 1 below `$01E1` is *data* the game reads constantly:
 
 | cell | address | used by |
 |---|---|---|
-| `INITL` | `$0122` | initials table (`SetUpInitialsHigh` writes `$0118,Y` at boot) |
-| `SPINT` | `$015E` | |
-| `EABUF` | `$016D` | EAROM buffer |
-| `EAZFLG`..`EACS` | `$018D-$0196` | EAROM state machine |
-| `EAREQU` | `$018E` | **read by `irq.c`** every 4 seconds (BCD bookkeeping) |
-| `ONTIME`/`BONTIME`/`PLAYTIME`/`GAMES1` | `$0197`-`$01AF` | bookkeeping counters |
+| `$0122` | `$0122` | initials table (`SetUpInitialsHigh` writes `$0118,Y` at boot) |
+| `$015E` | `$015E` | |
+| `$016D` | `$016D` | EAROM buffer |
+| `EACS`..`PLAYTIME` | `$018D-$0196` | EAROM state machine |
+| `ONTIME` | `$018E` | **read by `irq.c`** every 4 seconds (BCD bookkeeping) |
+| `$0197`/`$019B`/`$019F`/`$01AF` | `$0197`-`$01AF` | bookkeeping counters |
 | `THRENG` | `$01E0` | highest data alias in `spaceduel_defines.asm` |
 
 Verified empirically: dumping the C port's RAM for all 34 compared frames

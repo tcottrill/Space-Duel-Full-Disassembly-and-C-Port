@@ -7,7 +7,7 @@
  * the ship pictures ($6259/$63FE - NOT AVG data, see NOTES_display.md), the
  * connecting rod ($62C6) and the fuse sparks ($638F).
  *
- * Everything goes through the real list pointer (zp $01/$02, BLUE/EAC2) via
+ * Everything goes through the real list pointer (zp $01/$02, VGLIST/EAC2) via
  * the vgutil layer, or straight into g.vram where the ROM wrote vector RAM
  * directly (score areas, rock slots, SH0XPCOORD piece coordinates).
  */
@@ -31,19 +31,19 @@ extern void aux_routine_add_offset(uint8_t x);   /* AuxRoutineAddOffset $7730: X
 /* trig / multiply (A2MATH) */
 extern uint8_t pi_angle0(uint8_t a);             /* PiAngle0 $6834: A=angle -> A=sin */
 extern uint8_t cos_sin_pi2(uint8_t a);           /* CosSinPi2 $6831: A=angle -> A=cos */
-extern uint8_t output_temp2_temp21(uint8_t a);   /* OutputTemp2Temp21 $686D: A*WHITE,
+extern uint8_t output_temp2_temp21(uint8_t a);   /* OutputTemp2Temp21 $686D: A*TEMP1,
                                                   * returns POTGO (hi); also writes
-                                                  * TEMP1/POKRAN/POTGO */
+                                                  * TEMP4/TEMP2/POTGO */
 /* game/sound modules */
 extern void always_remains_same_both(void);      /* AlwaysRemainsSameBoth $703C (X preserved) */
 extern void random_fuzz(uint8_t x_in, uint8_t y_in); /* RandomFuzz $6B45
                                                   * (sound.c): caller's live
-                                                  * X/Y reach TEMP5/TEMP6 */
+                                                  * X/Y reach TEMPA/TEMPB */
 extern void stop_fuse_sound(void);               /* StopFuseSound $6B57 (sound.c) */
 extern void explosion(uint8_t x_in, uint8_t y_in); /* Explosion $72E5 (sound.h:
                                                   * trigger stubs park the
                                                   * caller's live X/Y in
-                                                  * TEMP5/TEMP6 - oracle-
+                                                  * TEMPA/TEMPB - oracle-
                                                   * visible, must be passed) */
 extern void get_comet_to_go(void);               /* GetCometToGo $468C */
 extern void bigbang(void);                       /* Bigbang $76CC */
@@ -70,17 +70,17 @@ static void wr_pair(uint8_t zp, uint8_t y, uint8_t v)
     else if (a >= 0x2000 && a < 0x2800) g.vram[a - 0x2000] = v;
 }
 
-/* LDA (BLUE),Y - read back from the list under construction. */
+/* LDA (VGLIST),Y - read back from the list under construction. */
 static uint8_t list_peek(uint8_t y) { return rd_pair(0x01, y); }
 
-/* LsbByte ($8EA7) entered with Y preset: word at (BLUE)+y, advance y+2. */
+/* LsbByte ($8EA7) entered with Y preset: word at (VGLIST)+y, advance y+2. */
 static void lsb_byte(uint8_t y, uint8_t a, uint8_t x)
 {
     vg_poke_list(y, a);
     vg_poke_list((uint8_t)(y + 1), x);
     vg_advance_list((uint8_t)(y + 1));
 }
-/* MsbByte ($8EAB) entered with Y preset: byte at (BLUE)+y, advance y+1. */
+/* MsbByte ($8EAB) entered with Y preset: byte at (VGLIST)+y, advance y+1. */
 static void msb_byte(uint8_t y, uint8_t a)
 {
     vg_poke_list(y, a);
@@ -130,7 +130,7 @@ static void display_an_initial(uint8_t y)
 {
     uint8_t a;
     SKCTL++;                                /* L50FC INC SKCTL */
-    if (TEMP2 != 0 && !(SPFLG & 0x80))
+    if (TEMP5 != 0 && !(SPFLG & 0x80))
         a = g.ram[0x137 + y];               /* special initials column */
     else
         a = g.ram[0x119 + y];               /* initials table */
@@ -170,7 +170,7 @@ static int gotit(void)
 {
     uint8_t x = POTGO;                      /* index of current initial */
     ZP_45 = 0xF4;                           /* reset ~64 s timeout */
-    if (TEMP2 != 0 && !(SPFLG & 0x80)) {
+    if (TEMP5 != 0 && !(SPFLG & 0x80)) {
         g.ram[0x138 + x] = 0x0B;            /* init next to A (special) */
         return 0;
     }
@@ -196,7 +196,7 @@ static uint8_t step_letter(uint8_t a, int *cout)
 }
 
 /* Getstp ($4EB9): rotate stick steps the letter every 8th frame.
- * x = TEMP2 (player), c = carry from the debounce CMP #$07. Returns C. */
+ * x = TEMP5 (player), c = carry from the debounce CMP #$07. Returns C. */
 static int getstp(uint8_t x, int c)
 {
     uint8_t r, a, y;
@@ -214,7 +214,7 @@ static int getstp(uint8_t x, int c)
     }
     /* Getstp_75 */
     a = y;
-    x = TEMP2;
+    x = TEMP5;
     if (x != 0 && !(SPFLG & 0x80)) {        /* special player-2 column */
         x = POTGO;
         a = (uint8_t)(a + g.ram[0x137 + x]);
@@ -230,7 +230,7 @@ static int getstp(uint8_t x, int c)
     return cout;                            /* Getstp_90 */
 }
 
-/* Getin6 ($4DFB): draw + edit one player's three initials. x = TEMP2.
+/* Getin6 ($4DFB): draw + edit one player's three initials. x = TEMP5.
  * Returns C (only the last player's pass reaches the mainline's BCC). */
 static int getin6(uint8_t x)
 {
@@ -251,31 +251,31 @@ static int getin6(uint8_t x)
     cab = sd_hw_in1(7);                     /* LDA CABERE */
     if (!(cab & 0x80)) {                    /* upright */
         a = 0x14; xx = 0x04;                /* Getin6_25 */
-        if (TEMP2 != 0)
+        if (TEMP5 != 0)
             a = 0xD8;                       /* second player */
         goto position;
     }
 flipped:
     a = 0xF0; xx = 0x08;                    /* Getin6_21: flipped position */
-    if (TEMP2 != 0)
+    if (TEMP5 != 0)
         a = 0x00;
 position:
     vg_vctr_dark(a, xx);                    /* position beam */
-    x = TEMP2;
+    x = TEMP5;
     base = g.ram[0x38 + x];                 /* LDY $38,X */
-    POKRAN = base;
+    TEMP2 = base;
     POTGO = (uint8_t)(base + g.ram[0x36 + x]); /* index of the initial */
     display_an_initial(base);
-    display_an_initial((uint8_t)(POKRAN + 1));
-    display_an_initial((uint8_t)(POKRAN + 2));
+    display_an_initial((uint8_t)(TEMP2 + 1));
+    display_an_initial((uint8_t)(TEMP2 + 2));
     /* Getin6_50: any button enters the letter (debounced over 5 frames) */
-    x = TEMP2;
+    x = TEMP5;
     a = (uint8_t)(sd_hw_in1(x) << 1);       /* HYPSW,X; ROL (bit6 -> 7) */
     a |= sd_hw_in1(x);                      /* ORA HYPSW,X */
     a |= sd_hw_in1((uint8_t)(4 + x));       /* ORA STRT1,X */
     c = (a >> 7) & 1;                       /* ROL: switch into carry */
-    deb = g.ram[0x49 + x];                  /* CMBSCORE,X as debounce */
-    g.ram[0x49 + x] = (uint8_t)((deb << 1) | (uint8_t)c); /* ROL CMBSCORE,X */
+    deb = g.ram[0x49 + x];                  /* LASTSW,X as debounce */
+    g.ram[0x49 + x] = (uint8_t)((deb << 1) | (uint8_t)c); /* ROL LASTSW,X */
     a = (uint8_t)(g.ram[0x49 + x] & 0x1F);
     if (a != 0x07)                          /* on exactly last 3 of 5 */
         return getstp(x, a >= 0x07);        /* C from CMP #$07 */
@@ -302,10 +302,10 @@ static int put_message_up_once(void)
     }
     if (!(sd_hw_in1(7) & 0x80))             /* CABERE: upright cabinet */
         getin4();
-    TEMP2 = 1;                              /* L4DF0 */
+    TEMP5 = 1;                              /* L4DF0 */
     c = getin6(1);
     (void)c;                                /* player 1's C is overwritten */
-    TEMP2 = 0;
+    TEMP5 = 0;
     return getin6(0);                       /* falls into Getin6 */
 }
 
@@ -325,11 +325,11 @@ int get_players_initials(void)
 /* ====================================================================== */
 
 /* ScoreColorBasedAbove ($50C0): seed the default lowest high score
- * ($D5-$D7 = 03 FD 05... BCD bytes) and DIFCTY. */
+ * ($D5-$D7 = 03 FD 05... BCD bytes) and $00D8. */
 void score_color_based_above(void)
 {
     g.ram[0xD7] = 0x05;                     /* default high score byte */
-    DIFCTY = 0xFB;                          /* $D8 */
+    (g.ram[0x00D8]) = 0xFB;                          /* $D8 */
     g.ram[0xD5] = 0x03;
     g.ram[0xD6] = 0xFD;
 }
@@ -355,12 +355,12 @@ void initialize_score_headings(void)
         x = 0x03;                           /* extra message if cocktail */
     for (;;) {
         FOURPI = x;                         /* which area */
-        BLUE = dsp_rom_50A8[(0x50B0 + x) - 0x50A8];  /* _115: list lo */
+        VGLIST = dsp_rom_50A8[(0x50B0 + x) - 0x50A8];  /* _115: list lo */
         EAC2 = dsp_rom_50A8[(0x50AC + x) - 0x50A8];  /* _110: list hi */
         x = FOURPI;
         if (x == 0)
             goto heading;                   /* this score for sure */
-        if (x >= 2 && (LASTSW & 0x80))
+        if (x >= 2 && (TOGCOMB & 0x80))
             goto heading14;                 /* combined score areas */
         if (x >= 2)
             goto rtsl_only;
@@ -393,7 +393,7 @@ void initialize_score_headings(void)
         vg_add_jmpl(dsp_rom_50A8[(0x50B4 + y) - 0x50A8],   /* _120 hi */
                     dsp_rom_50A8[(0x50B8 + y) - 0x50A8]);  /* _125 lo */
         EAC2 = dsp_rom_50A8[(0x50B4 + y) - 0x50A8];
-        BLUE = dsp_rom_50A8[(0x50B8 + y) - 0x50A8];
+        VGLIST = dsp_rom_50A8[(0x50B8 + y) - 0x50A8];
         use_full_size(1);                   /* _30 */
         vg_vctr_dark(0xE4, 0xFA);           /* down & left, chars 24 tall */
     next_area:                              /* _90 */
@@ -417,25 +417,25 @@ void inset2(void)
 }
 
 /* Temp3WhichPlayer0 ($5C24) lives in objects.c (declared in objects.h);
- * display.c's DisplayParameters stages XCOMP / the list pointer /
+ * display.c's DisplayParameters stages TEMP3 / the list pointer /
  * UPDOWN and calls it. */
 
 /* DisplayParameters ($5CF2): rebuild any changed score+lives area, writing
  * straight into its vector-RAM block. */
 void display_parameters(void)
 {
-    XCOMP = 0x00;                           /* player tracker for lives */
+    TEMP3 = 0x00;                           /* player tracker for lives */
     if (PL0SCFLAG & 0x80) {
-        BLUE = 0x80;                        /* list -> $2380 (PL0ARE) */
+        VGLIST = 0x80;                        /* list -> $2380 (PL0ARE) */
         EAC2 = 0x23;
         PL0SCFLAG = 0x00;
         UPDOWN = 0x00;                      /* no flip here */
         temp3_which_player0(0x3A);          /* player 0 score at $3A */
     }
-    XCOMP++;                                /* _10 */
+    TEMP3++;                                /* _10 */
     if (PL1SCFLAG & 0x80) {
         PL1SCFLAG = 0x00;
-        BLUE = 0xC0;                        /* list -> $23C0 (PL1ARE) */
+        VGLIST = 0xC0;                        /* list -> $23C0 (PL1ARE) */
         EAC2 = 0x23;
         UPDOWN = sd_hw_in1(7);              /* CABERE: possible flip */
         if (ZP_34 == 0x03)
@@ -445,12 +445,12 @@ void display_parameters(void)
     if (CMBSCFLAG & 0x80) {                 /* _20 */
         UPDOWN = 0x00;                      /* always upright */
         CMBSCFLAG = 0x00;
-        BLUE = 0x80;                        /* list -> $2780 (CMBARE) */
+        VGLIST = 0x80;                        /* list -> $2780 (CMBARE) */
         EAC2 = 0x27;
-        XCOMP++;                            /* 2 = combined lives */
+        TEMP3++;                            /* 2 = combined lives */
         temp3_which_player0(0x40);          /* combined score at $40 */
         UPDOWN = 0x80;                      /* flipped copy for cocktail */
-        BLUE = 0x36;                        /* list -> $2736 (CMSBAR) */
+        VGLIST = 0x36;                        /* list -> $2736 (CMSBAR) */
         EAC2 = 0x27;
         temp3_which_player0(0x40);
     }
@@ -523,7 +523,7 @@ int cc_carry_set_displaying(void)
 int scores(void)
 {
     uint8_t a, x, y, cab;
-    YTOP = 0xFF;                            /* no need to STAT green yet */
+    TEMP9 = 0xFF;                            /* no need to STAT green yet */
     g.ram[0x14] = 0x01;                     /* show 2 tables */
 s13:                                        /* Scores_13 */
     a = (uint8_t)(LASTG & 0x02);
@@ -537,14 +537,14 @@ s13:                                        /* Scores_13 */
     x = a;                                  /* _16 */
     g.ram[0x0E] = dsp_rom_6152[(0x6156 + x) - 0x6152];  /* score index */
     SKCTL = g.ram[0x0E];                    /* initials index */
-    XCOMP = 0x01;                           /* place indicator */
-    TEMP2 = x;
+    TEMP3 = 0x01;                           /* place indicator */
+    TEMP5 = x;
     mesgpos(0xDC, 0x3C);
     aux_routine_add_offset(5);
-    brightness(0xC2, 0x00);                 /* HIGH SCORE message */
+    brightness(0xC2, 0x00);                 /* HIGH GENDING message */
     vg_vctr_dark(0xDD, 0xF0);
     aux_routine_add_offset(6);              /* to move ship pics */
-    y = (uint8_t)(TEMP2 & 0x02);
+    y = (uint8_t)(TEMP5 & 0x02);
     cab = sd_hw_in1(7);                     /* BIT CABERE */
     if (cab & 0x40)
         y++;
@@ -554,7 +554,7 @@ s13:                                        /* Scores_13 */
     if (!(cab & 0x40)) {                    /* player message needed */
         x = g.ram[0x14];
         mesgpos(dsp_rom_5FFE[(0x6000 + x) - 0x5FFE], 0x1C);
-        x = TEMP2;
+        x = TEMP5;
         y = dsp_rom_6152[(0x6152 + x) - 0x6152];  /* Scores_110: msg # */
         UPDOWN = y;                         /* always normal */
         vector_message5(y);                 /* 1/2 PLAYER, green */
@@ -574,16 +574,16 @@ s20:                                        /* Scores_20 */
     a = SKCTL;                              /* initials index */
     if (a == FLSFLG || a == g.ram[0x3EC]) { /* last entered? */
         set_vg_status(FLASHCOL);            /* _23: slow flash color */
-        YTOP = 0x00;                        /* need-green flag */
-    } else if (!(YTOP & 0x80)) {
+        TEMP9 = 0x00;                        /* need-green flag */
+    } else if (!(TEMP9 & 0x80)) {
         y = 0xC2;                           /* back to yellow */
         cab = sd_hw_in1(7);
         if (cab & 0x40)
             y = 0xC4;
-        YTOP = y;                           /* already-green flag */
+        TEMP9 = y;                           /* already-green flag */
         set_vg_status(y);
     }
-    if (TEMP2 == 0x02) {                    /* _24: game 2 second column */
+    if (TEMP5 == 0x02) {                    /* _24: game 2 second column */
         SPFLG = 0x00;                       /* special flag for Inita3 */
         inita3();
         inita3();
@@ -604,10 +604,10 @@ s20:                                        /* Scores_20 */
     FOURPI = (uint8_t)(FOURPI - 0x08);      /* next line down */
     g.ram[0x0E] = (uint8_t)(g.ram[0x0E] + 3);
     {                                       /* place: BCD increment */
-        bcd_res r = bcd_adc(XCOMP, 0x01, 0);
-        XCOMP = r.r;
+        bcd_res r = bcd_adc(TEMP3, 0x01, 0);
+        TEMP3 = r.r;
     }
-    if (XCOMP < 0x06)
+    if (TEMP3 < 0x06)
         goto s20;
 s80:                                        /* Scores_80 */
     cab = sd_hw_in1(7);
@@ -639,7 +639,7 @@ void expset(uint8_t x)
 }
 
 /* ShipExplodingPictures ($6169): flashing ship and/or drifting pieces.
- * x = exploding ship's object index ($21/$22) = XCOMP. */
+ * x = exploding ship's object index ($21/$22) = TEMP3. */
 static void ship_exploding_pictures(uint8_t x)
 {
     uint8_t a, sx;
@@ -659,19 +659,19 @@ static void ship_exploding_pictures(uint8_t x)
         return;                             /* just flash */
 pieces:                                     /* _5 */
     use_full_size(1);
-    x = XCOMP;
+    x = TEMP3;
     a = (x == 0x21) ? 0xF4 : 0xF2;
     vg_add2(a, 0x64);                       /* _6: piece color */
-    x = XCOMP;
+    x = TEMP3;
     if (g.ram[0x97 + x] < 0xA2)             /* first explosion frame */
         expset(x);                          /* init pieces */
-    x = XCOMP;                              /* _20 */
-    TEMP1 = (uint8_t)((((g.ram[0x97 + x] ^ 0xFF) & 0x70) >> 3) & 0xFE);
-    WHITE = dsp_rom_6257[(0x6236 + x) - 0x6257];  /* piece coord ptr lo */
+    x = TEMP3;                              /* _20 */
+    TEMP4 = (uint8_t)((((g.ram[0x97 + x] ^ 0xFF) & 0x70) >> 3) & 0xFE);
+    TEMP1 = dsp_rom_6257[(0x6236 + x) - 0x6257];  /* piece coord ptr lo */
     EACE = 0x27;                            /* ptr hi -> $27xx */
     NMROCK = 0x00;
     do {                                    /* _25: one piece per pass */
-        POKRAN = BLUE;                      /* save list pos for the */
+        TEMP2 = VGLIST;                      /* save list pos for the */
         POTGO = EAC2;                       /*   negated return leg */
         x = NMROCK;
         a = dsp_rom_6CB5[(0x6CB5 + x) - 0x6CB5];  /* Y velocity */
@@ -697,13 +697,13 @@ pieces:                                     /* _5 */
             vg_poke_list(a, sd_vecrom[0x3668 + x + a - 0x2800]);
         vg_advance_list(3);
         negate_a_long_vector();             /* dark return leg */
-        WHITE = (uint8_t)(WHITE + 4);       /* next piece coordinates */
+        TEMP1 = (uint8_t)(TEMP1 + 4);       /* next piece coordinates */
         NMROCK = (uint8_t)(NMROCK + 2);
-    } while (NMROCK < TEMP1);
+    } while (NMROCK < TEMP4);
 }
 
-/* Pictur ($5D6D): draw object x. Entry: x = XCOMP = object index; the
- * object's position is staged in RED/CHAN2V (X) and TWOPI/CHAN3V (Y)
+/* Pictur ($5D6D): draw object x. Entry: x = TEMP3 = object index; the
+ * object's position is staged in RED/XCOMP (X) and TWOPI/CHAN3V (Y)
  * by MotionUpdateRoutine. First emits JSRL $30B6 + centered position
  * VCTR, then dispatches on object class. */
 void pictur(uint8_t x)
@@ -711,13 +711,13 @@ void pictur(uint8_t x)
     uint8_t a, xx, y, c;
     if (x == 0x1F)                          /* just in case super saucer */
         always_remains_same_both();
-    /* Pictur_1: position words, raw (BLUE),Y stores */
+    /* Pictur_1: position words, raw (VGLIST),Y stores */
     a = (uint8_t)(RED - 0x10);              /* X pos to 2's complement */
     c = (uint8_t)(a & 1);
     a >>= 1;
-    CHAN2V = (uint8_t)((CHAN2V >> 1) | (c << 7));  /* ROR CHAN2V */
+    XCOMP = (uint8_t)((XCOMP >> 1) | (c << 7));  /* ROR XCOMP */
     vg_poke_list(5, (uint8_t)(a & 0x1F));   /* brightness of 0 */
-    vg_poke_list(4, CHAN2V);
+    vg_poke_list(4, XCOMP);
     a = (uint8_t)(TWOPI - 0x0C);            /* Y pos to 2's complement */
     c = (uint8_t)(a & 1);
     a >>= 1;
@@ -726,7 +726,7 @@ void pictur(uint8_t x)
     vg_poke_list(2, CHAN3V);
     vg_poke_list(1, 0xA8);                  /* JSRL $30B6 */
     vg_poke_list(0, 0x5B);
-    vg_advance_list(5);                     /* BLUE += 6 */
+    vg_advance_list(5);                     /* VGLIST += 6 */
     /* Pictur_20 */
     if (g.ram[0x97 + x] & 0x80) {           /* exploding */
         if (x >= 0x21 && x < 0x23) {
@@ -739,7 +739,7 @@ void pictur(uint8_t x)
             a = (uint8_t)(a + 0x10);
         xx = (uint8_t)((a >> 4) | 0x70);    /* SCAL */
         vg_add2(0x00, xx);
-        x = XCOMP;
+        x = TEMP3;
         y = (uint8_t)(g.ram[0x97 + x] & 0x0E);  /* explosion phase (PHA) */
         if (SPECEX & 0x80) {                /* special explosions */
             a = (uint8_t)(x & 0x07);
@@ -772,7 +772,7 @@ void pictur(uint8_t x)
             a = 0x03;                       /* Pictur_5 */
         vg_poke_list(2, (uint8_t)(a | 0xE0));   /* COLOR + intensity */
         vg_poke_list(3, 0x64);
-        if (SAUMIN & 0x80) {                /* attract wants letters */
+        if (ATSTG & 0x80) {                /* attract wants letters */
             vg_poke_list(4, 0xC1);          /* word $ACC1 = JSRL $3982 */
             vg_poke_list(5, 0xAC);
         } else {                            /* Pictur_7/_10 */
@@ -780,11 +780,11 @@ void pictur(uint8_t x)
             vg_poke_list(4, dsp_rom_6E5C[(0x6ECD + xx) - 0x6E5C]);
             vg_poke_list(5, dsp_rom_6E5C[(0x6ECE + xx) - 0x6E5C]);
         }
-        vg_advance_list(5);                 /* _15: BLUE += Y+1 */
-        if (SAUMIN & 0x80) {                /* _37: attract special */
+        vg_advance_list(5);                 /* _15: VGLIST += Y+1 */
+        if (ATSTG & 0x80) {                /* _37: attract special */
             g.ram[0x17]++;                  /* next scale size */
             use_full_size(g.ram[0x17]);
-            (void)vg_char(dsp_rom_5F46[(0x5F57 + (XCOMP & 0x0F)) - 0x5F46],
+            (void)vg_char(dsp_rom_5F46[(0x5F57 + (TEMP3 & 0x0F)) - 0x5F46],
                           0);               /* Cubltr,X -> SaveCFlag */
         }
         return;                             /* Pictur_39 */
@@ -853,19 +853,19 @@ void pictur(uint8_t x)
 /* ====================================================================== */
 
 /* RoutineAlsoDoesBlanking ($652F): called after every emitted record;
- * counts TEMP5 down and inserts a 2-word STAT - black at the damage spot
+ * counts TEMPA down and inserts a 2-word STAT - black at the damage spot
  * (Shpd4table) when PRTDAMAGE says so, white when the thrust flame starts
- * (TEMP5 == $FE). Y (list offset) in/out. AlsoUsedFromBelow ($6553) is
+ * (TEMPA == $FE). Y (list offset) in/out. AlsoUsedFromBelow ($6553) is
  * the shared RTS. */
 static uint8_t routine_also_does_blanking(uint8_t y)
 {
-    uint8_t x = XCOMP, a;
-    TEMP5--;                                /* another vector */
-    a = TEMP5;
+    uint8_t x = TEMP3, a;
+    TEMPA--;                                /* another vector */
+    a = TEMPA;
     if (a == dsp_rom_63F0[(0x63DB + x) - 0x63F0] &&   /* Shpd4table */
         (g.ram[0x367 + x] & 0x80)) {        /* PRTDAMAGE,X: damaged? */
         a = 0x00;                           /* black STAT */
-    } else if (TEMP5 == 0xFE) {             /* _10: time for thrust */
+    } else if (TEMPA == 0xFE) {             /* _10: time for thrust */
         a = 0xF7;                           /* white thrust */
     } else {
         return y;                           /* AlsoUsedFromBelow */
@@ -878,23 +878,23 @@ static uint8_t routine_also_does_blanking(uint8_t y)
 }
 
 /* ThenPartiallyDamagedOtherwise ($64A4): after the record loop - clear the
- * z bits of the last record (dark return leg), of the record at TEMP6 and
- * TEMP6+4 (flame bridge), and of the first record's X word (the dark
+ * z bits of the last record (dark return leg), of the record at TEMPB and
+ * TEMPB+4 (flame bridge), and of the first record's X word (the dark
  * centre-to-hull offset, the SHPDI8 codicil), then advance the list. */
 static void then_partially_damaged(uint8_t y)
 {
     if (y >= 0x1E) {
         vg_poke_list(y, (uint8_t)(list_peek(y) & 0x1F));
-        POKRAN = y;                         /* STY POKRAN */
-        y = TEMP6;                          /* WhereFirstByteBlank */
+        TEMP2 = y;                         /* STY TEMP2 */
+        y = TEMPB;                          /* WhereFirstByteBlank */
         vg_poke_list(y, (uint8_t)(list_peek(y) & 0x1F));
         y = (uint8_t)(y + 4);
         vg_poke_list(y, (uint8_t)(list_peek(y) & 0x1F));
     }
     /* _60: first record's X msb (offset 3) goes dark */
     vg_poke_list(3, (uint8_t)(list_peek(3) & 0x1F));
-    vg_advance_list(POKRAN);                /* LDY POKRAN; AddY1ToVector.
-                                             * If y<$1E POKRAN still holds
+    vg_advance_list(TEMP2);                /* LDY TEMP2; AddY1ToVector.
+                                             * If y<$1E TEMP2 still holds
                                              * the picture pointer lo -
                                              * never reached for real ship
                                              * counts (y >= $5B). */
@@ -905,33 +905,33 @@ static void then_partially_damaged(uint8_t y)
  * vectors. Reflect flags ride in $12: bit 7 = negate the X byte, bit 6 =
  * negate the Y byte. Each record: raw byte as delta lsb, msb = sign bits
  * only ($00/$1F for Y, $20/$3F for X - the $20 is SHPLUM's z=1 "use the
- * COLOR intensity"). Picture bytes stream through (POKRAN),0 with 8-bit
- * INC POKRAN (never carries into POTGO). */
+ * COLOR intensity"). Picture bytes stream through (TEMP2),0 with 8-bit
+ * INC TEMP2 (never carries into POTGO). */
 static void fall(uint8_t ycount)
 {
     uint8_t y = 0xFF, flags = g.ram[0x12];  /* BIT $12 */
     int neg_y = (flags & 0x40) != 0;        /* V: Y reflect */
     int neg_x = (flags & 0x80) != 0;        /* N: X reflect */
-    WHITE = ycount;                         /* STY WHITE */
+    TEMP1 = ycount;                         /* STY TEMP1 */
     for (;;) {
         uint8_t b, v;
         y++;
-        b = rd_pair(0x0A, 0);               /* LDA (POKRAN,X): YY byte */
+        b = rd_pair(0x0A, 0);               /* LDA (TEMP2,X): YY byte */
         v = neg_y ? (uint8_t)(0u - b) : b;
         vg_poke_list(y, v);                 /* Y delta lsb */
         y++;
         vg_poke_list(y, (uint8_t)((v & 0x80) ? 0x1F : 0x00)); /* Y msb */
-        POKRAN++;                           /* 8-bit page-local advance */
+        TEMP2++;                           /* 8-bit page-local advance */
         y++;
         b = rd_pair(0x0A, 0);               /* XX byte */
         v = neg_x ? (uint8_t)(0u - b) : b;
         vg_poke_list(y, v);                 /* X delta lsb */
         y++;
         vg_poke_list(y, (uint8_t)((v & 0x80) ? 0x3F : 0x20)); /* X msb+z */
-        POKRAN++;
+        TEMP2++;
         y = routine_also_does_blanking(y);  /* color thrust check */
-        WHITE--;
-        if (WHITE & 0x80)                   /* DEC WHITE / BPL */
+        TEMP1--;
+        if (TEMP1 & 0x80)                   /* DEC TEMP1 / BPL */
             break;
     }
     then_partially_damaged(y);
@@ -939,19 +939,19 @@ static void fall(uint8_t ycount)
 
 /* Shpdisplays ($63FE): x = object index ($21/$22), y = index into the
  * picture pointer table at $2800 (CKUM4/ROCKA). Loads the picture pointer
- * into POKRAN/POTGO, the fixed record counts (SHPD2TABLE model - see
+ * into TEMP2/POTGO, the fixed record counts (SHPD2TABLE model - see
  * disasm/NOTES.md), and emits via Fall. Thrust adds SHPD3TABLE's 4 records
  * when the thrust switch is down mid-game on the flash phase. */
 void shpdisplays(uint8_t x, uint8_t y)
 {
     uint8_t cnt;
-    XCOMP = x;                              /* save X */
-    POKRAN = sd_vecrom[y];                  /* LDA CKUM4,Y ($2800+Y) */
+    TEMP3 = x;                              /* save X */
+    TEMP2 = sd_vecrom[y];                  /* LDA CKUM4,Y ($2800+Y) */
     POTGO = sd_vecrom[1u + y];              /* LDA ROCKA,Y ($2801+Y) */
     cnt = dsp_rom_63F0[(0x63D7 + x) - 0x63F0];  /* CountWholeShipVectors */
-    TEMP5 = cnt;                            /* for color thrust */
-    TEMP6 = dsp_rom_63F0[(0x63D5 + x) - 0x63F0];/* WhereFirstByteBlank */
-    TEMP5 = cnt;                            /* Shpdisplays_20 reload */
+    TEMPA = cnt;                            /* for color thrust */
+    TEMPB = dsp_rom_63F0[(0x63D5 + x) - 0x63F0];/* WhereFirstByteBlank */
+    TEMPA = cnt;                            /* Shpdisplays_20 reload */
     if ((ZP_35 & 0x80) &&                   /* no thrust in attract */
         (sd_hw_in1((uint8_t)(x - 0x1D)) & 0x80) && /* thrust sw $08E3,X */
         !(g.ram[0x97 + x] & 0x80) &&        /* not suspended animation */
@@ -963,7 +963,7 @@ void shpdisplays(uint8_t x, uint8_t y)
 
 /* DisplayShipPicture ($6259): shield STAT + shield JSRL, player color,
  * then fold SANGLE into a 0-$20 picture index + reflect flags ($12) and
- * draw via Shpdisplays. Falls into Drawrod. x = object index = XCOMP. */
+ * draw via Shpdisplays. Falls into Drawrod. x = object index = TEMP3. */
 void display_ship_picture(uint8_t x)
 {
     uint8_t a, c;
@@ -974,14 +974,14 @@ void display_ship_picture(uint8_t x)
     vg_poke_list(0, a);                     /* intensity register */
     vg_poke_list(1, 0x64);
     lsb_byte(2, 0x50, 0xAF);                /* JSRL $3EA0 (SHIELD) */
-    x = XCOMP;
+    x = TEMP3;
     if (!(ZP_44 & 0x04) && g.ram[0x3C6 + x] != 0) {  /* ENTER,X flash */
         a = (uint8_t)(((g.ram[0x3C6 + x] ^ 0xF0) & 0xF0) | 0x07);
     } else {
         a = (x == 0x21) ? 0xD4 : 0xD2;      /* _45: ship color */
     }
     vg_add2(a, 0x64);                       /* _50 */
-    x = XCOMP;
+    x = TEMP3;
     /* _90: angle -> quadrant + reflects */
     a = g.ram[0x282 + x];                   /* SANGLE,X */
     c = 0;                                  /* CLC: reflect Y off */
@@ -989,11 +989,11 @@ void display_ship_picture(uint8_t x)
         a = (uint8_t)(0u - a);              /* 256-angle */
         c = 1;                              /* reflect Y on */
     }
-    TEMP5 = a;                              /* _10: 0 to $80 */
+    TEMPA = a;                              /* _10: 0 to $80 */
     g.ram[0x12] = (uint8_t)((g.ram[0x12] >> 1) | (c << 7)); /* ROR $12 */
     c = 0;                                  /* CLC: reflect X off */
-    if (TEMP5 & 0xC0) {                     /* BMI or BVS: sectors 2/3 */
-        a = (uint8_t)(0x80 - TEMP5);        /* _15: 128-angle */
+    if (TEMPA & 0xC0) {                     /* BMI or BVS: sectors 2/3 */
+        a = (uint8_t)(0x80 - TEMPA);        /* _15: 128-angle */
         c = 1;                              /* reflect X on */
     }
     g.ram[0x12] = (uint8_t)((g.ram[0x12] >> 1) | (c << 7)); /* _20 */
@@ -1021,26 +1021,26 @@ void drawrod(void)
 {
     uint8_t x, d, c;
     unsigned t;
-    if (!(LASTSW & 0x80))
+    if (!(TOGCOMB & 0x80))
         return;                             /* not the rigid pair */
     if (RODSTATUS & 0x80)
         return;                             /* already drew a rod */
     vg_add2(0xF6, 0x64);                    /* _12: yellow rod */
-    x = XCOMP;
+    x = TEMP3;
     if (g.ram[0x97 + x] & 0x80)
         return;                             /* skip if exploding */
     RODSTATUS--;                            /* will have drawn the rod */
     if (!(SPARKTIME & 0x80)) {              /* somebody died: fuse burns */
-        random_fuzz(x, POKRAN);             /* crackle: X=XCOMP, Y=POKRAN
+        random_fuzz(x, TEMP2);             /* crackle: X=TEMP3, Y=TEMP2
                                              * leftover (same pair the
                                              * Explosion below carries) */
         SPARKTIME--;
         if (SPARKTIME == 0) {               /* dead now */
             stop_fuse_sound();
             g.ram[0x97 + x] = 0xA0;         /* explode */
-            explosion(x, POKRAN);           /* JSR Explosion: X=XCOMP still
-                                             * live; POKRAN holds Shpdisplays'
-                                             * final list-offset Y (STY POKRAN
+            explosion(x, TEMP2);           /* JSR Explosion: X=TEMP3 still
+                                             * live; TEMP2 holds Shpdisplays'
+                                             * final list-offset Y (STY TEMP2
                                              * in ThenPartiallyDamagedOtherwise,
                                              * $64AE), untouched since - the
                                              * real Y the ROM carries in here */
@@ -1053,7 +1053,7 @@ void drawrod(void)
     /* _20: delta to the pair object ($23), wrapped, halved into the
      * long-vector zp quad */
     t = (unsigned)g.ram[A_OBJXL + 0x23] - g.ram[0x320 + x];   /* $0343 */
-    CHAN2V = (uint8_t)t;
+    XCOMP = (uint8_t)t;
     d = (uint8_t)(g.ram[A_OBJXH + 0x23]     /* $02D8 */
                   - g.ram[0x2B5 + x] - ((t >> 8) & 1));
     if (!((uint8_t)(d - 0x10) & 0x80))      /* CMP #$10 / BMI */
@@ -1062,7 +1062,7 @@ void drawrod(void)
         d = (uint8_t)(d + 0x20);            /* carry was clear */
     c = (uint8_t)(d & 1);                   /* _40: LSR */
     RED = (uint8_t)(d >> 1);
-    CHAN2V = (uint8_t)((CHAN2V >> 1) | (c << 7)); /* ROR CHAN2V */
+    XCOMP = (uint8_t)((XCOMP >> 1) | (c << 7)); /* ROR XCOMP */
     t = (unsigned)g.ram[A_OBJYL + 0x23] - g.ram[0x352 + x];   /* $0375 */
     CHAN3V = (uint8_t)t;
     d = (uint8_t)(g.ram[A_OBJYH + 0x23]     /* $030A */
@@ -1074,13 +1074,13 @@ void drawrod(void)
     c = (uint8_t)(d & 1);                   /* _60: LSR */
     TWOPI = (uint8_t)(d >> 1);
     CHAN3V = (uint8_t)((CHAN3V >> 1) | (c << 7)); /* ROR CHAN3V */
-    BLACK = 0xAF;                           /* z byte for the rod */
+    VGBRIT = 0xAF;                           /* z byte for the rod */
     if (SPARKTIME & 0x80) {                 /* nobody died yet */
         vg_add_vector_from_zp(3);           /* full rod (exit) */
         return;
     }
     /* _70: rod shrinking - each component * (2*SPARKTIME)/128 */
-    WHITE = (uint8_t)(SPARKTIME << 1);      /* multiplier */
+    TEMP1 = (uint8_t)(SPARKTIME << 1);      /* multiplier */
     x = 0x02;                               /* start with Y component */
     for (;;) {
         uint8_t a;
@@ -1088,14 +1088,14 @@ void drawrod(void)
         c = (uint8_t)(g.ram[0x04 + x] & 1); /* LSR RED,X */
         g.ram[0x04 + x] >>= 1;
         a = (uint8_t)((g.ram[0x03 + x] >> 1) | (c << 7)); /* ROR A */
-        a = output_temp2_temp21(a);         /* * WHITE -> POTGO/POKRAN */
+        a = output_temp2_temp21(a);         /* * TEMP1 -> POTGO/TEMP2 */
         x = NMROCK;
         g.ram[0x04 + x] = 0x00;             /* STA RED,X */
         if (a & 0x80)                       /* POTGO sign */
             g.ram[0x04 + x] = 0xFF;         /* DEC RED,X */
         c = (uint8_t)((a >> 7) & 1);        /* _77: ASL carry */
         g.ram[0x04 + x] = (uint8_t)((g.ram[0x04 + x] << 1) | c);
-        g.ram[0x03 + x] = (uint8_t)(a << 1);/* STA CHAN2V,X */
+        g.ram[0x03 + x] = (uint8_t)(a << 1);/* STA XCOMP,X */
         if (x == 0)
             break;                          /* DEX DEX BPL */
         x = (uint8_t)(x - 2);
@@ -1115,14 +1115,14 @@ void spark2(void)
         return;                             /* self-test: don't run */
     if (!(ZP_44 & 0x01))
         return;                             /* every other frame */
-    BLUE = 0xD0;                            /* list -> $22D0 (SPARKB) */
+    VGLIST = 0xD0;                            /* list -> $22D0 (SPARKB) */
     EAC2 = 0x22;
     FOURPI = 0x03;                          /* _5: spark spokes */
     do {                                    /* _10 */
         y = FOURPI;
         a = (uint8_t)(((ZP_44 >> 1) +       /* group phase offset */
                        dsp_rom_63F0[(0x63F0 + y) - 0x63F0]) & 0x0F);
-        WHITE = a;
+        TEMP1 = a;
         if (a == 0)                         /* restart this sparklet */
             g.ram[A_SPARKANGLE + y] = sd_hw_pokey_random(0); /* $100A */
         a = pi_angle0(g.ram[A_SPARKANGLE + y]);   /* _50: sin */
@@ -1131,9 +1131,9 @@ void spark2(void)
         y = FOURPI;
         a = cos_sin_pi2(g.ram[A_SPARKANGLE + y]); /* cos */
         a = output_temp2_temp21(a);
-        TEMP2 = a;                          /* Y result */
-        vg_vctr_z(TEMP2, g.ram[0x14], 0x20);      /* out */
-        vg_vctr_z((uint8_t)(0u - TEMP2),          /* and back */
+        TEMP5 = a;                          /* Y result */
+        vg_vctr_z(TEMP5, g.ram[0x14], 0x20);      /* out */
+        vg_vctr_z((uint8_t)(0u - TEMP5),          /* and back */
                   (uint8_t)(0u - g.ram[0x14]), 0x20);
         FOURPI--;
     } while (!(FOURPI & 0x80));             /* DEC / BPL */

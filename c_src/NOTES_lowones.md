@@ -17,8 +17,8 @@ signed, full scale +/-$7F.
 | `Comp` $684D | A | A = -A (two's complement; callers branch on result N) | - |
 | `Comp1` $6852 | bare RTS (BPL target of $684B) | - | - |
 | `EntryInputExitAbsolute` $684B | A signed | A = \|A\| ($80 stays $80) | - |
-| `OutputTemp2Temp21` $686D | A = **signed** multiplicand, WHITE ($07) = **unsigned** multiplier | A = POTGO ($0B) = product high byte (= A*WHITE/256); POKRAN ($0A) = low byte | TEMP1 ($10), X, Y; WHITE preserved |
-| `SignedBySignedMult` $6853 | A, WHITE both **signed** | as OutputTemp2Temp21 | additionally **rewrites WHITE = \|WHITE\|** (clamped $80->$7F) when it was negative; A clamped -128->$7F |
+| `OutputTemp2Temp21` $686D | A = **signed** multiplicand, TEMP1 ($07) = **unsigned** multiplier | A = POTGO ($0B) = product high byte (= A*TEMP1/256); TEMP2 ($0A) = low byte | TEMP4 ($10), X, Y; TEMP1 preserved |
+| `SignedBySignedMult` $6853 | A, TEMP1 both **signed** | as OutputTemp2Temp21 | additionally **rewrites TEMP1 = \|TEMP1\|** (clamped $80->$7F) when it was negative; A clamped -128->$7F |
 | `L_90_68C7` $68C7 | shared STA POTGO / RTS tail | no outside callers - folded in | - |
 
 Details that matter downstream:
@@ -26,20 +26,20 @@ Details that matter downstream:
 - **X is destroyed by every sine call** (Sin1 does TAX). The ROM's own
   comment at $49E4: "IS THIS NEEDED? YES, SIN USES X" - C callers keep
   their own locals, but any translated caller must reload its X-derived
-  state (usually `LDX XCOMP`) after a sine, exactly as the ROM does.
+  state (usually `LDX TEMP3`) after a sine, exactly as the ROM does.
 - The dominant idiom (Ok1 $49CB, Spark2 $63BC, Fire3 $4CCA, ThrustTwoShips,
-  WillAssumeRadiusBar...): preload WHITE with a speed/length, then
+  WillAssumeRadiusBar...): preload TEMP1 with a speed/length, then
   `pi_angle0(angle)` / `cos_sin_pi2(angle)` straight into
   `output_temp2_temp21(...)` -> A = component = sin*speed/256.
 - OutputTemp2Temp21 works via the 256-byte nibble-product table $6D5C
   (`nibmul[(h<<4)|l] = h*l`) - four partial products; the entry N flag is
-  PHP-saved and selects the signed fixup `high -= WHITE`. Verified
+  PHP-saved and selects the signed fixup `high -= TEMP1`. Verified
   **exhaustively** (65536/65536): result == high/low byte of
-  (int8)A * (uint8)WHITE.
-- SignedBySignedMult's WHITE rewrite is a real, observable RAM side
-  effect (WHITE $07); reproduced.
-- RAM stores inside OutputTemp2Temp21, in ROM order: TEMP1=A,
-  POTGO=Ahi*Whi, POKRAN=Alo*Wlo, TEMP1=cross>>4, POKRAN=product lo,
+  (int8)A * (uint8)TEMP1.
+- SignedBySignedMult's TEMP1 rewrite is a real, observable RAM side
+  effect (TEMP1 $07); reproduced.
+- RAM stores inside OutputTemp2Temp21, in ROM order: TEMP4=A,
+  POTGO=Ahi*Whi, TEMP2=Alo*Wlo, TEMP4=cross>>4, TEMP2=product lo,
   POTGO=product hi. All reproduced for the oracle diff.
 - Sanity: Sin07 == round(127*sin(i*pi/128)) within 0.5 over all 65
   entries, monotonic 0..127; full-circle pi_angle0/cos_sin_pi2 track
@@ -63,33 +63,33 @@ which calls `move_saucer_pic_color()` - one call does the whole $6EE5 pass.
      pic-select countdowns $3DB/$3DD decrement, reloading to 2 / 3.
      $3DB/$3DD low bits double as color codes for stubs 1 and 3.
 2. **Rock stubs** VROCK1-4 ($2290/$229E/$22AC/$22BA): for star X=3..0,
-   point BLUE/EAC2 at the stub and write a 2-byte AVG **JMPL word from
+   point VGLIST/EAC2 at the stub and write a 2-byte AVG **JMPL word from
    RSOURC** ($6E8D: 4 rows of 8 words, row = rotation counter & 3), then
    for X=0..2 three {COLOR lo, $64; RTSL $C0,$C0} 4-byte groups
    (CVR11..PYR13); X==2 uses ColorTable+6 (Barco2, 4-color). X==3 gets
    the bare word.
 3. **Toppic**: same recopy for the single-word stubs VROCK5-8
-   ($22BC-$22C2), XCOMP biased +8 into the RSOURC rows, and X forced to
+   ($22BC-$22C2), TEMP3 biased +8 into the RSOURC rows, and X forced to
    (X&1)+2 so only the **slow** counters $3D8/$3D9 rotate them.
 4. **MoveSaucerPicColor**: every 4th frame INC SAUCIX ($3ED, mod 4);
    every 16th frame rotate the saucer color bytes SAU11/12/13
    ($22C4/$22C8/$22CC, vector RAM) one step.
 
-**BLUE/EAC2 ($01/$02) - the VG display-list pointer - is clobbered** (left
+**VGLIST/EAC2 ($01/$02) - the VG display-list pointer - is clobbered** (left
 pointing into the last top stub). The ROM relies on the mainline resetting
 the pointer before list building; the C port reproduces the clobber.
-All `(BLUE),Y` stores go through `vg_poke_list()` (no pointer advance).
+All `(VGLIST),Y` stores go through `vg_poke_list()` (no pointer advance).
 
 ## Other entry points
 
-- `SaveLater` $7017: in X = star 0-3; POKRAN=X, XCOMP=A=Y=X*2; returns Y.
-- `GetRotationColorCode` $701F: in X = counter index 0-3, XCOMP = slot
-  offset, BLUE/EAC2 = stub; writes the 2-byte RSOURC word, returns Y=2
-  (callers continue writing at (BLUE),2). `GetRotationColorCode_11`
+- `SaveLater` $7017: in X = star 0-3; TEMP2=X, TEMP3=A=Y=X*2; returns Y.
+- `GetRotationColorCode` $701F: in X = counter index 0-3, TEMP3 = slot
+  offset, VGLIST/EAC2 = stub; writes the 2-byte RSOURC word, returns Y=2
+  (callers continue writing at (VGLIST),2). `GetRotationColorCode_11`
   ($702B) is local only.
 - `L80RandomWave0` $6FDD: `l80_random_wave0(x, y)` - caller passes its
   live X/Y because the ROM stashes them to **$17** (unnamed zp scratch)
-  and **NOBJ** ($15) - real stores the oracle diff sees - then restores
+  and **TEMP7** ($15) - real stores the oracle diff sees - then restores
   them. Returns A = picture code from $6EDD ({00,08,10,18,28,30,20,38}),
   chosen by WAVE (clamped to 18) through Mod/$6FB9 and
   TableRandomPictureSelect/$6FCB; waves flagged $80 cycle MODNUM ($3F8)
@@ -110,7 +110,7 @@ All `(BLUE),Y` stores go through `vg_poke_list()` (no pointer advance).
 
 ## Externs / dependencies
 
-- `vg_poke_list()` from vgutil.h (raw `STA (BLUE),Y`). Nothing else; the
+- `vg_poke_list()` from vgutil.h (raw `STA (VGLIST),Y`). Nothing else; the
   module reads no hardware (no POKEY RANDOM in this range - Spark2's
   `LDA $100A` at $63B6 is a *caller*, not this module).
 - Unnamed cells used: `g.ram[0x17]` (L80RandomWave0 X stash),

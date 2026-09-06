@@ -61,8 +61,8 @@ byte-level differential testing against the real machine.
 | bug | effect | how it surfaced |
 |---|---|---|
 | `objects.c` read `$B8,X` as `$97,X` at 3 sites | confused ship slots (`$21/$22`) with object slots (`$00/$01`) — **the port fired a torpedo the ROM never fired** | 13,361 → 637 mismatched bytes from this one fix |
-| `Newp2` ($5977) didn't return its exit Y | `NOBJ` stuck at 0 forever | oracle write-trace on `$15` showed the ROM's Y sequence 0,9,8,…,2 |
-| `explosion()` declared with no args | wrong values parked in `TEMP5`/`TEMP6` | cross-module signature audit (see §3) |
+| `Newp2` ($5977) didn't return its exit Y | `TEMP7` stuck at 0 forever | oracle write-trace on `$15` showed the ROM's Y sequence 0,9,8,…,2 |
+| `explosion()` declared with no args | wrong values parked in `TEMPA`/`TEMPB` | cross-module signature audit (see §3) |
 | `expset()` declared `static` | link failure | integration |
 | stale `killer_mines`/`motion_update_routine` externs | X not threaded between them | integration; the ROM couples them via `$517D LDA $0308,X` |
 
@@ -78,7 +78,7 @@ communicate through live A/X/Y and carry far more than through named cells.
 Two examples that forced API changes across modules:
 
 - Sound triggers must take `(x_in, y_in)`: `Badhab` ($72FA) parks the
-  caller's live X and Y into `TEMP5`/`TEMP6`, which are oracle-visible. A
+  caller's live X and Y into `TEMPA`/`TEMPB`, which are oracle-visible. A
   "clean" `void gates(void)` signature is *wrong*.
 - `InitializeComet`'s X clobber, `Newp2`'s exit Y, `GetRotationColorCode`
   returning Y=2 which its caller then uses as a list offset — all load-bearing.
@@ -119,7 +119,7 @@ measurement. Whether play-mode lists routinely cross the gate is still open
 and answerable with a play capture.
 
 **The coin/slam polarity trap.** Idle IN0 is `0x3F` (plus HALT/3 kHz), not
-`0x50`. With d3 low the ROM reads *slam tripped*, reloads `TEMPA = $F0`
+`0x50`. With d3 low the ROM reads *slam tripped*, reloads `$0025 = $F0`
 every IRQ and wipes `$2A-$2F` — so no coin can ever register. This is
 exactly why the oracle's attract scenario runs forever coin-free (correct
 for attract) and why the first playable build would have ignored every coin.

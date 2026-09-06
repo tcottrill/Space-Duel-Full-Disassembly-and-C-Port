@@ -47,7 +47,7 @@ extern const uint8_t mainline_comentable[0x02]; /* Comentable $6ACF: Inco10's
 extern const uint8_t mainline_comet_ramp[0x0C]; /* $6D0F NewCometAngleChange
                                                  * (+0) / NewCometTopSpeed
                                                  * (+4) / FirstCometSTop
-                                                 * (+8), indexed by KLMINC  */
+                                                 * (+8), indexed by DIFF  */
 extern const uint8_t mainline_ttplayr[0x04];    /* Ttplayr $6CD5            */
 extern const uint8_t mainline_bonus_optn[0x04]; /* BonusOptionSwitchesAssumed
                                                  * $7724                    */

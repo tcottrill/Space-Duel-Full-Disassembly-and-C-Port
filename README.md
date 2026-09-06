@@ -37,7 +37,7 @@ against them. Nothing was named to taste.
 
 | where | what |
 |-------|------|
-| [`disasm/`](disasm/README.md) | the disassembly: the program ROM and the colour AVG vector ROM as plain assembler source that re-encodes to the ROM byte for byte, a defines file carrying the memory map and 281 named RAM cells and hardware registers, a shape preview that draws every vector object, and the tools that generate all of it from a ROM set |
+| [`disasm/`](disasm/README.md) | the disassembly: the program ROM and the colour AVG vector ROM as plain assembler source that re-encodes to the ROM byte for byte, a defines file carrying the memory map and 280 named RAM cells and hardware registers, each with a line saying what it holds, a shape preview that draws every vector object, and the tools that generate all of it from a ROM set |
 | [`c_src/`](c_src/README.md) | the C port: the whole 6502 program as C11, real AVG words built in a modelled 2 KB vector RAM, two real POKEYs and a real ER2055 EAROM behind the hardware seam, a Windows host (OpenGL beam renderer, XAudio2 sound, keyboard/joystick, persistent high scores, the cabinet self-test) and a headless host for the differential probes. Builds with VS2022, no external SDK |
 
 Each of the two directories has its own README with the detail.

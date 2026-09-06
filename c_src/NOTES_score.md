@@ -31,7 +31,7 @@ No arguments; call site: `mainline.c` `chkst1()` ($439A), immediately
 after `update_info_at_end()`. Reads `ZP_34` (game-select switch, 0-3) to
 pick a path:
 
-| game | live-score slot X | TEMP1 | SPFLG | note |
+| game | live-score slot X | TEMP4 | SPFLG | note |
 |---|---|---|---|---|
 | 0 | 3 then 0 | 1 then 0 | $FF | checks LEFT player's score, then RIGHT's (both always run - see below) |
 | 1 | 0 | 0 | $FF | RIGHT/solo score only |
@@ -41,7 +41,7 @@ pick a path:
 `jmp_upda20(x)` (static, `UpdateUpdateHighScore` in the listing) does the
 actual scan/insert. Register protocol as derived from its 3 call shapes
 above: **in** `x` = which live-score slot to compare/insert (3/0/6),
-`TEMP1` (0x10) and `SPFLG` (0x3EA) already staged by the caller as shown;
+`TEMP4` (0x10) and `SPFLG` (0x3EA) already staged by the caller as shown;
 **out**: none (all effects are RAM stores + a possible `bigbang()` call).
 
 **Control-flow note on the JSR/JMP mix**: the ROM calls `jmp_upda20` for
@@ -57,27 +57,27 @@ normal call/return in C is indistinguishable here from the ROM's
 JMP-into-a-JSR-frame trick - nothing observable happens between the
 `JMP Bigbang` and the eventual `RTS` in either version.
 
-### 2a. The zero-page reuse this routine depends on
+### 2a. The cells this routine reads (formerly a "zero-page reuse" puzzle)
 
-`UpdateUpdateHighScore`'s live-score compare and the "shift down" copy
-read several bytes through names that have nothing to do with their
-usual meaning - a real 6502 idiom (the disassembler substitutes whatever
-symbol the address table has, regardless of the code's actual intent):
+This section used to record two apparent 6502 zero-page-reuse tricks. Both
+were artifacts of a bug in the RAM map: `rammap.py` counted the `.BYTE`
+and `.WORD` lines inside `.MACRO` bodies in `ASTRD2.MAC`, so every page 0
+and page 1 name came out 9 bytes too high. With the map corrected the two
+"tricks" are simply the variables they always were:
 
-- **`$3A,X` / `INTRPT+X` ($3B,X) / `SYNC+X`($3C,X)`** - NOT interrupt/sync
-  flags here. They are a 3-byte live score staged by the caller before
-  `UpdateHighScoreTable` runs (X = 3/0/6 selects which of 3 staged
-  scores). Nothing in the routines translated so far writes these bytes;
-  the staging site is presumably in `chkst1()`/`Chkst1` (mainline.c,
-  already translated - worth an orchestrator check that it does write
-  $3A-$42 before calling `update_high_score_table()`) or a
-  not-yet-identified predecessor. **Flagged as an open question below.**
-- **`LANG`/`DIFF`/`SAUMIN`** ($DA/$DB/$DC) - read only as address
-  arithmetic ("$DD/$DE/$DF minus 3") for the shift-down copy
-  (`SCORE[y] = SCORE[y-3]`); their own named values are never actually
-  read (y is always >= 3 within a slice in every reachable case).
-  `score.c` uses raw `g.ram[0xDA+idx]` etc., not the macros, so the code
-  doesn't imply a meaning that isn't there.
+- **`$3A,X` / `$3B,X` / `$3C,X`** - this is `SCORE` ($3A). The 3-byte live
+  score staged by the caller before `UpdateHighScoreTable` runs, X = 3/0/6
+  selecting which of the three staged scores. It used to disassemble as
+  `INTRPT`/`SYNC` (the coin-routine cells at $32/$33 under the corrected
+  map), which is what made it look like unrelated bytes being reused.
+  `AddPointsToScore` in this same file is the writer, so the old open
+  question about where the staging happens is answered too.
+- **`$DA`/`$DB`/`$DC`** - `HSCORE` ($DD) minus 3, i.e. the source slot of
+  the shift-down copy `HSCORE[y] = HSCORE[y-3]`; y is always >= 3 within a
+  slice in every reachable case. They used to disassemble as
+  `LANG`/`DIFF`/`SAUMIN`. `score.c` still writes these as raw
+  `g.ram[0xDA+idx]` because the alias names only the first byte of the
+  array, not because the meaning is in doubt.
 - The "special" second initials array (`$0137,X` written from `$0134,X`)
   is a genuinely separate 60-slot-indexed array that, because SPFLG is
   only ever $00 for game type 2 (X always 30-44 in that case), only ever
@@ -158,41 +158,40 @@ existing `objects.c` extern):
 
 **in** `a` = the BCD point value in tens ($10 = 100 points). The value
 actually banked is `a + $CF - 1` in BCD - the points stepped up by the
-current difficulty level, computed once and parked in TEMP5 ("BONUS
+current difficulty level, computed once and parked in TEMPA ("BONUS
 DISPLAY=DIFCTY LEVEL -1"). Also read, not passed: `OWNER` ($038E, the
 scoring player, bit 7 = nobody -> immediate RTS) and `$35` (game active;
 minus = in a game, so the whole routine is a no-op during attract).
 **out** nothing. X is clobbered (it exits as OWNER on the per-player
 bonus path and as the score slot 0/3 on the combined path); both ROM call
-sites that still need X reload it from XCOMP/WHITE right afterwards, which
+sites that still need X reload it from TEMP3/TEMP1 right afterwards, which
 is what `objects.c`'s "X/Y here are AddPointsToScore's leftovers" comments
 already record. Y is preserved - AddPointsToScore never touches it.
 
-**Stores** (all oracle-visible, CONVENTIONS 1b): TEMP5, `PL0SCFLAG,OWNER`,
-the live score `$3A,X`/`$3B,X`/`$3C,X` (X = 0 or 3), YTOP, `OPTN1,OWNER`,
+**Stores** (all oracle-visible, CONVENTIONS 1b): TEMPA, `PL0SCFLAG,OWNER`,
+the live score `$3A,X`/`$3B,X`/`$3C,X` (X = 0 or 3), TEMP9, `NXTBON,OWNER`,
 `$47,OWNER`, CMBSCFLAG, the combined score `$40`/`$41`/`$42`, and `$47`/
-`$48`. On the extra-life path it also reaches Badhab's TEMP5/TEMP6 parks
+`$48`. On the extra-life path it also reaches Badhab's TEMPA/TEMPB parks
 via the tail call (below).
 
-### 3a.1 The zero-page reuse, again - and one new find
+### 3a.1 The score cells, again
 
-Same trap as section 2a: `$3A,X` / `INTRPT+X` / `SYNC+X` are the 3-byte
-live score for slot X, not interrupt/sync flags. Slot 0 is the right/solo
-player, slot 3 the left player, slot 6 the combined-game score.
+As in section 2a: `$3A,X` / `$3B,X` / `$3C,X` are `SCORE` and its two
+following bytes, the 3-byte live score for slot X. Slot 0 is the
+right/solo player, slot 3 the left player, slot 6 the combined-game score.
 
-**New**: the ROM writes slot 6 *absolutely*, not indexed, and the
-disassembler labels those three bytes `EAWRIT` ($40), `UPDFLG` ($41) and
-`$42`. Grepping the whole listing shows `EAWRIT` and `UPDFLG` appear
-**nowhere else in the ROM** - they are pure symbol-table artifacts with no
-EAROM meaning whatsoever, exactly like INTRPT/SYNC. `score.c` therefore
-writes `g.ram[0x40]`/`g.ram[0x41]`/`g.ram[0x42]` rather than the macros,
-per this file's own naming policy. (Worth knowing for anyone reading an
-oracle diff: a $40-$42 delta during play is a *score* change, not EAROM
-activity.)
+The ROM writes slot 6 *absolutely* rather than indexed, and those three
+bytes are `CMBSCORE` ($40) and the two after it. Under the old, 9-byte-high
+RAM map they disassembled as `EAWRIT`/`UPDFLG`, which read as EAROM labels
+appearing nowhere else in the ROM; that was the map's error, not a symbol
+artifact - $40-$42 really is the combined score. `score.c` writes them as
+`g.ram[0x40]`/`g.ram[0x41]`/`g.ram[0x42]` because the alias names only the
+first byte. (Worth knowing for anyone reading an oracle diff: a $40-$42
+delta during play is a *score* change, not EAROM activity.)
 
-By contrast `DIFF` ($DB) and `OPTN1` ($D9) **are** read as themselves here
-- DIFF is the bonus-life score step (0 = bonus lives disabled) and
-`OPTN1,X` is the player's next bonus threshold - so they keep their
+By contrast `BONLVA` ($DB) and `NXTBON` ($D9) **are** read as themselves here
+- BONLVA is the bonus-life score step (0 = bonus lives disabled) and
+`NXTBON,X` is the player's next bonus threshold - so they keep their
 macros. `$CF` (difficulty/wave level), `$47`/`$48` (lives per player) and
 `$35` have no confirmed Atari names and stay raw hex, matching
 `objects.c`/`mainline.c`.
@@ -201,8 +200,8 @@ macros. `$CF` (difficulty/wave level), `$47`/`$48` (lives per player) and
 
 Everything between the `SED` at $5F72 and the `CLD` at _80/_90 is BCD.
 That includes the "cannot increment while in decimal" idiom the ROM uses
-to propagate the carry (`LDA #$00 / ADC INTRPT,X` instead of `INC`), and
-the `CLC / ADC DIFF` bonus-threshold steps. `CMP`, `INC` and `DEC` are
+to propagate the carry (`LDA #$00 / ADC $003B,X` instead of `INC`), and
+the `CLC / ADC BONLVA` bonus-threshold steps. `CMP`, `INC` and `DEC` are
 unaffected by the D flag and stay plain binary - notably the `CMP #$0A`
 life limit and the `INC $47,X`.
 
@@ -221,16 +220,16 @@ for whoever needs it next.
 Two entry paths into the combined-score tail, reproduced with labelled
 gotos in the same shape as the ROM:
 
-- carry out of score byte 0 **and** `LASTSW` minus -> `_65` directly;
-- no carry -> `_60`, which re-tests `LASTSW` and either falls into `_65`
+- carry out of score byte 0 **and** `TOGCOMB` minus -> `_65` directly;
+- no carry -> `_60`, which re-tests `TOGCOMB` and either falls into `_65`
   or exits at `_90`.
 
 So the combined score is updated on **every** scoring event in a combined
 game, while the per-player thousands bytes and the per-player bonus check
 only run when the low byte carried. The per-player bonus path can only be
-reached when `LASTSW` is *not* minus, i.e. the two bonus checks are
+reached when `TOGCOMB` is *not* minus, i.e. the two bonus checks are
 mutually exclusive - the combined game awards its bonus off `$41`
-(combined thousands) against player 0's `OPTN1`, and gives *both* players
+(combined thousands) against player 0's `NXTBON`, and gives *both* players
 a life (`INC $47` and `INC $48`).
 
 `AddPointsToScore_80` ends in `JMP ExtraLife2` - a tail call, so the sound
@@ -300,7 +299,7 @@ orchestrator can now drop that local extern in favour of `score.h`).
 ## 6. Open questions
 
 1. **RESOLVED AND TRANSLATED: the live 3-byte score at
-   $3A/$3B(INTRPT)/$3C(SYNC)[+3/+6] is maintained by `AddPointsToScore`
+   SCORE $3A/$3B/$3C[+3/+6] is maintained by `AddPointsToScore`
    ($5F68)**, which now lives in this module - see section 3a. It runs
    throughout live play (called from `objects.c` whenever points are
    scored) and leaves the running total sitting in $3A-$42 for
@@ -312,7 +311,7 @@ orchestrator can now drop that local extern in favour of `score.h`).
    question 1a below.
 1a. **The caller's Y at `AddPointsToScore_80`'s `JMP ExtraLife2`.** The
    tail call reaches `Badhab` ($72FA), which parks the live 6502 X *and* Y
-   in TEMP5/TEMP6 - both oracle-visible stores. X is exact (this routine
+   in TEMPA/TEMPB - both oracle-visible stores. X is exact (this routine
    computes it: OWNER on the per-player path, the score slot 0/3 on the
    combined path), but Y is whatever the caller left, and the
    `add_points_to_score(uint8_t a)` signature - fixed by `objects.c`'s

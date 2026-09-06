@@ -50,7 +50,7 @@ alias (`#define SDELAY  (g.ram[0x26D])`). Rationale:
    oracle after every frame. A struct would need a serialization map and would
    fight 6502 idioms.
 2. **6502 idioms translate exactly.** Indexed runs that span several symbols
-   (`LDA SCORE,X` across both players' BCD scores), `(zp),Y` pointer walks
+   (`LDA GENDING,X` across both players' BCD scores), `(zp),Y` pointer walks
    (EAROM buffer copies, initials entry), and the VG list pointer all work
    unchanged against a flat array.
 3. It is a phase, not the endpoint. Once parity is proven, refactoring toward
@@ -64,7 +64,7 @@ alias (`#define SDELAY  (g.ram[0x26D])`). Rationale:
 - The mainline (`Start2`, $4012) free-runs: waits for VG HALT, then for the
   ~61.5 Hz gate ($33, incremented by every 4th IRQ). One mainline pass = one
   displayed frame; nominally 4 IRQs per frame.
-- IRQ-vs-mainline interleaving is the known fidelity risk (cells like TOTOBJ,
+- IRQ-vs-mainline interleaving is the known fidelity risk (cells like INTRPT,
   SECOND, GTIME, IANGLE advance per IRQ). The oracle logs the IRQ count at each
   VGGO so probe builds can replay the exact schedule; cells that remain
   interleaving-dependent get a documented diff mask, never a silent one.

@@ -23,7 +23,7 @@ uint8_t output_temp2_temp21(uint8_t a);       /* OutputTemp2Temp21  $686D   */
 /* PartSignedNumberExit $67D0: in x = the X (denominator) difference,
  * y = the Y (numerator) difference, both signed; out A = the angle,
  * 256 units per circle (same units as pi_angle0/cos_sin_pi2).  Clobbers
- * the 6502 X and Y; writes POTGO ($0B) and POKRAN ($0A).  x == y == 0
+ * the 6502 X and Y; writes POTGO ($0B) and TEMP2 ($0A).  x == y == 0
  * returns $20 (the ROM's degenerate answer).  Divisor $67DC, Divisor2
  * $67EB, L4BitDivide $6805 and Temp21DivisorUnsigned $681F are its
  * internal stages (static in lowones.c; no outside callers). */

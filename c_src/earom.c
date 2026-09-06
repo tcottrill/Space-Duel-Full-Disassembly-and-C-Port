@@ -31,8 +31,8 @@
 #include "earom.h"
 
 /* ---- unnamed state cells (g.ram[0xXX]; no Atari names in the defines) ---
- * The named cells EAZFLG $018D (running checksum), EAREQU $018E-$0191 (live
- * ontime BCD counter, bumped by the IRQ) and EABC $0192-$0195 (its slot in
+ * The named cells EACS $018D (running checksum), ONTIME $018E-$0191 (live
+ * ontime BCD counter, bumped by the IRQ) and BONTIME $0192-$0195 (its slot in
  * the bookkeeping buffer) come from sd_state_defs.h. */
 #define EA_ZERO   (g.ram[0x184])  /* $0184: $FF = zero RAM while writing     */
 #define EA_REQ    (g.ram[0x185])  /* $0185: pending batch request bits       */
@@ -44,10 +44,10 @@
 #define EA_LAST   (g.ram[0x18B])  /* $018B: checksum (= last) EAROM address  */
 #define EA_MASK   (g.ram[0x18C])  /* $018C: mask of the batch being serviced */
 #define EA_PTR_LO (g.ram[0xC7])   /* $C7:   buffer pointer lo                */
-/* buffer pointer hi is $C8 = OBP0MINES (defines reuse the name)             */
+/* buffer pointer hi is $C8 = $00C8 (defines reuse the name)             */
 
 /* buffer pointer for the ($C7),Y accesses */
-#define EA_PTR    ((uint16_t)(EA_PTR_LO | ((uint16_t)OBP0MINES << 8)))
+#define EA_PTR    ((uint16_t)(EA_PTR_LO | ((uint16_t)(g.ram[0x00C8]) << 8)))
 
 /* ---- ROM tables (byte-checked against spacduel_64k.bin by
  *      tools/gen_earom_data.py; tiny, so inlined per CONVENTIONS 1c) ------ */
@@ -56,7 +56,7 @@
 static const uint8_t tab_8747[4] = { 0x02, 0x1D, 0x1E, 0x3E };
 
 /* EaromOffsetLowestByte ($874B): {buffer lo, buffer hi} per batch
- * (batch 0 -> $0164, batch 1 -> $0192 = EABC) */
+ * (batch 0 -> $0164, batch 1 -> $0192 = BONTIME) */
 static const uint8_t earom_offset_lowest_byte[4] = { 0x64, 0x01, 0x92, 0x01 };
 
 /* Subnum ($8926): substitute score byte when a buffer byte fails BCD
@@ -149,7 +149,7 @@ void output_earom_erased_written(void)
             /* start a new batch: scan for the highest set request bit.
              * Exits with x = bit number, EA_MASK = its mask. */
             EA_IDX = 0;                   /* L878D zero source index     */
-            EAZFLG = 0;                   /* L8790 zero checksum ($018D) */
+            EACS = 0;                   /* L8790 zero checksum ($018D) */
             EA_MASK = 0;                  /* L8793 zero select bit       */
             x = 0x08;                     /* L8796 LDX #$08              */
             c = 1;                        /* L8798 SEC                   */
@@ -168,7 +168,7 @@ void output_earom_erased_written(void)
             EA_ADDR = tab_8747[x];        /* L87BB first EAROM address   */
             EA_LAST = tab_8747[x + 1];    /* L87C1 checksum address      */
             EA_PTR_LO = earom_offset_lowest_byte[x];     /* L87C7 -> $C7 */
-            OBP0MINES = earom_offset_lowest_byte[x + 1]; /* L87CC -> $C8 */
+            (g.ram[0x00C8]) = earom_offset_lowest_byte[x + 1]; /* L87CC -> $C8 */
         }
     }
     /* L87D1: deselect the chip (ends any pending erase/write pulse) */
@@ -197,7 +197,7 @@ void output_earom_erased_written(void)
         a = RAM(EA_PTR + y);              /* L8802 RAM data (default)    */
         if (x >= EA_LAST) {               /* L8804 CPX $018B, BCC L8811  */
             EA_OP = 0x00;                 /* L880B all done, set done flag */
-            a = EAZFLG;                   /* L880E write the checksum    */
+            a = EACS;                   /* L880E write the checksum    */
         }
         sd_hw_earom_write(x, a);          /* L8811 STA EADAL,X           */
         sub_8858(a, 0x0C);                /* L8814 write mode + chip select */
@@ -216,7 +216,7 @@ void output_earom_erased_written(void)
         sub_8856(a);                      /* falls into L8856: next byte */
         return;
     }
-    a ^= EAZFLG;                          /* L8834 match checksum?       */
+    a ^= EACS;                          /* L8834 match checksum?       */
     if (a != 0) {                         /* L8837 BEQ L884C             */
         int i;                            /* no: wipe buffer, flag batch */
         for (i = EA_IDX; i >= 0; i--)     /* L883B LDY $0189             */
@@ -244,7 +244,7 @@ static void sub_8856(uint8_t a)
  * y = EACTL code ($00/$0C from call sites). */
 static void sub_8858(uint8_t a, uint8_t y)
 {
-    EAZFLG = (uint8_t)(EAZFLG + a);       /* L8858 CLC/ADC/STA: checksum */
+    EACS = (uint8_t)(EACS + a);       /* L8858 CLC/ADC/STA: checksum */
     EA_IDX++;                             /* L885F INC $0189             */
     EA_ADDR++;                            /* L8862 INC $018A             */
     sub_8865(y);
@@ -339,9 +339,9 @@ void copy_from_buffer_back(void)
         g.ram[0x146 + x] = save_original(&y, (uint8_t)x); /* L88ED       */
         y++;                              /* L88F3 INY                   */
     }
-    a = (uint8_t)(g.ram[0xDD] | ROCKMIN | g.ram[0xDF]); /* L88F7 score 0? */
+    a = (uint8_t)(g.ram[0xDD] | (g.ram[0x00DE]) | g.ram[0xDF]); /* L88F7 score 0? */
     if (a == 0) {                         /* L8900 must have just cleared */
-        ROCKMIN = 0x05;                   /* L8904 STA $00DE: reinit tops */
+        (g.ram[0x00DE]) = 0x05;                   /* L8904 STA $00DE: reinit tops */
         g.ram[0xED] = 0x05;               /* L8907                       */
         g.ram[0xFC] = 0x05;               /* L890A                       */
         g.ram[0x10B] = 0x05;              /* L890D                       */
@@ -349,15 +349,15 @@ void copy_from_buffer_back(void)
 }                                         /* L8910 RTS                   */
 
 /* CopyOntimeFromBuffer ($89A3): move the 4-byte ontime counter from its
- * bookkeeping-buffer slot (EABC, $0192) to the live cells the IRQ ticks
- * (EAREQU, $018E). The ROM brackets this with SEI/CLI so the IRQ cannot
+ * bookkeeping-buffer slot (BONTIME, $0192) to the live cells the IRQ ticks
+ * (ONTIME, $018E). The ROM brackets this with SEI/CLI so the IRQ cannot
  * update mid-copy - dropped, the C port cannot be preempted here.
  * No arguments. Call sites: boot $80CE, game start/end, self-test. */
 void copy_ontime_from_buffer(void)
 {
     int x;                                /* L89A3 SEI (dropped)         */
     for (x = 3; x >= 0; x--)              /* L89A4 LDX #$03 ... DEX/BPL  */
-        g.ram[A_EAREQU + x] = g.ram[A_EABC + x];
+        g.ram[A_ONTIME + x] = g.ram[A_BONTIME + x];
 }                                         /* L89AF CLI (dropped)         */
 
 /* ------------------------------------------------------------------ */
@@ -365,16 +365,16 @@ void copy_ontime_from_buffer(void)
 /* ------------------------------------------------------------------ */
 
 /* AddGameTimeSubroutime ($8997): one decimal byte of the just-finished
- * game's elapsed time folded into the per-game-type running total EACS
- * ($0196+). In: *x = EACS index, *y = GTIME index, cin = incoming carry
- * (0 from UpdateInfoAtEnd's CLC, then threaded call to call). Out: EACS[x]
+ * game's elapsed time folded into the per-game-type running total PLAYTIME
+ * ($0196+). In: *x = PLAYTIME index, *y = GTIME index, cin = incoming carry
+ * (0 from UpdateInfoAtEnd's CLC, then threaded call to call). Out: PLAYTIME[x]
  * updated; *x/*y advanced by 1; returns outgoing carry. Only caller:
  * UpdateInfoAtEnd (4x unrolled, $8948-$8951 - kept unrolled here too since
  * the ROM never turned it into a loop). */
 static int add_game_time_subroutime(uint8_t *x, uint8_t *y, int cin)
 {
-    bcd_res r = bcd_adc(g.ram[A_EACS + *x], g.ram[A_GTIME + *y], cin);
-    g.ram[A_EACS + *x] = r.r;             /* L8997-9D                    */
+    bcd_res r = bcd_adc(g.ram[A_PLAYTIME + *x], g.ram[A_GTIME + *y], cin);
+    g.ram[A_PLAYTIME + *x] = r.r;             /* L8997-9D                    */
     (*x)++;                               /* L89A0                       */
     (*y)++;                               /* L89A1                       */
     return r.c;
@@ -402,17 +402,17 @@ void update_info_at_end(void)
     carry = add_game_time_subroutime(&x, &y, carry); /* L8951            */
     (void)carry;                          /* final carry unused           */
 
-    /* L8954-64: EAREQU += GTIME (4 bytes) - this counter was off during
+    /* L8954-64: ONTIME += GTIME (4 bytes) - this counter was off during
      * the game, so fold the elapsed game time back in. */
     carry = 0;                            /* L8958 CLC                   */
     for (i = 0; i < 4; i++) {
-        bcd_res r = bcd_adc(g.ram[A_GTIME + i], g.ram[A_EAREQU + i], carry);
-        g.ram[A_EAREQU + i] = r.r;
+        bcd_res r = bcd_adc(g.ram[A_GTIME + i], g.ram[A_ONTIME + i], carry);
+        g.ram[A_ONTIME + i] = r.r;
         carry = r.c;
     }
 
     /* L8966-6E: X = game# * 3 -> the 3-byte games-played BCD counter at
-     * $01A6 (GAMES1 $01AF aliases game-type index 3 of this array). */
+     * $01A6 ($01AF $01AF aliases game-type index 3 of this array). */
     x = (uint8_t)((uint8_t)(ZP_34 << 1) + ZP_34);
     {
         bcd_res r;
@@ -425,9 +425,9 @@ void update_info_at_end(void)
     }
     /* CLD (L8988): decimal mode ends here - nothing further to model. */
 
-    /* L8989-92: stage EAREQU into EABC for the EAROM write. */
+    /* L8989-92: stage ONTIME into BONTIME for the EAROM write. */
     for (i = 0; i < 4; i++)
-        g.ram[A_EABC + i] = g.ram[A_EAREQU + i];
+        g.ram[A_BONTIME + i] = g.ram[A_ONTIME + i];
 
     request_bookkeeping_update();         /* L8994 JMP (tail call)        */
 }

@@ -40,13 +40,13 @@ uint8_t killer_mines(uint8_t x);
 /* AccHoldsAngleObject $4956: arctan(y relative to x), then Klmi7.
  * Cross-module entry from the comet module ($6C8D JMP, a tail call). */
 uint8_t acc_holds_angle_object(uint8_t x, uint8_t y);
-/* Klmi7 $4959: steer object XCOMP toward angle a and rebuild XINC/YINC.
+/* Klmi7 $4959: steer object TEMP3 toward angle a and rebuild XINC/YINC.
  * Cross-module entry from the comet module ($6C93 JMP). Falls into
  * CompetitiveWantWaitOther, so it returns that routine's exit X. */
 uint8_t klmi7(uint8_t a_angle);
 uint8_t competitive_want_wait_other(uint8_t x);   /* $49E9; returns exit X   */
 uint8_t scent5(uint8_t a, uint8_t x);    /* Scent5 $4AA1 (saucer entry)      */
-uint8_t reset_timers(void);              /* ResetTimers $4B5C (X = WHITE)    */
+uint8_t reset_timers(void);              /* ResetTimers $4B5C (X = TEMP1)    */
 uint8_t hasent(uint8_t x);               /* Hasent $4B5E; returns x          */
 uint8_t enemy_fire_control(uint8_t a, int carry); /* EnemyFireControl $4B74  */
 void    fire_ships_torpedos(uint8_t x);  /* FireShipsTorpedos $4C70          */
@@ -81,9 +81,9 @@ uint8_t ship_dead_so_will(uint8_t x, uint8_t y);
 
 /* ---- wave / object start-up ($5968-$5BB8) ------------------------------ */
 /* Newp2 $5977 (place a new rock).  Returns the 6502 Y it leaves: on the
- * SAUMIN path (the only one attract takes) that is x & $0F, which
+ * ATSTG path (the only one attract takes) that is x & $0F, which
  * NewastStartNewAsteroids_10's next pass feeds to L80RandomWave0 ($6FDF
- * STY NOBJ).  On the GetNewVelocity path Y is untouched. */
+ * STY TEMP7).  On the GetNewVelocity path Y is untouched. */
 uint8_t newp2(uint8_t x, uint8_t y);
 void    newast_start_new_asteroids(void);/* NewastStartNewAsteroids $59C0    */
 void    reset_enemy_timers(void);        /* ResetEnemyTimers $5AC6           */
@@ -116,7 +116,7 @@ extern const uint8_t obj_wave_tab[0x14];      /* $5BA5 per-wave ramp         */
 extern const uint8_t obj_rock_points[0x04];   /* $6611 SplitRockIntoFragments_110
                                                * points per new size; [3] is
                                                * the unreachable code byte   */
-extern const uint8_t obj_toggles[0x08];       /* $6CCD LASTSW/$51 seeds      */
+extern const uint8_t obj_toggles[0x08];       /* $6CCD TOGCOMB/$51 seeds      */
 extern const uint8_t obj_km_tab[0x36];        /* $6CD9 killer-mine ramps     */
 
 #endif /* OBJECTS_H */

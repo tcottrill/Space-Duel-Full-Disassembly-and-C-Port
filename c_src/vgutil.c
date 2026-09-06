@@ -1,11 +1,12 @@
 /* vgutil.c - Space Duel C port: the VG utility layer (module VGUTR2, $8E42).
  *
  * These routines append real AVG words to the display list through the real
- * zero-page list pointer (lo $01 = BLUE, hi $02 = EAC2), exactly as the ROM
+ * zero-page list pointer (lo $01 = VGLIST, hi $02 = EAC2), exactly as the ROM
  * did. Byte parity with the oracle is the contract; nothing is abstracted.
  *
- * The zero-page cells $00-$09 (Atari's names BLACK, BLUE, EAC2, CHAN2V, RED,
- * CHAN3V, TWOPI, WHITE, EACE, VGBRIT) are the VG scratch block: $01/$02 the
+ * The zero-page cells $00-$09 (VGBRIT, then VGLIST $01-$02, XCOMP $03-$06 and
+ * TEMP1 $07-$09, the last three spanning several cells) are the VG scratch
+ * block: $01/$02 the
  * list pointer, $03-$06 the shifted 16-bit deltas of the long-vector builder,
  * $00 the z/status byte mixed into vector words.
  */
@@ -20,7 +21,7 @@ extern const uint8_t sd_vecrom[0x1800];
 /* memory routing for the list pointer and the negate reader           */
 /* ------------------------------------------------------------------ */
 
-/* STA (BLUE),Y - the list pointer normally targets vector RAM; route by
+/* STA (VGLIST),Y - the list pointer normally targets vector RAM; route by
  * address so a holding buffer in CPU RAM also works. */
 static void vg_store(uint8_t y, uint8_t v)
 {
@@ -39,7 +40,7 @@ static uint8_t mem_read(uint16_t a)
     return 0;
 }
 
-/* AddY1ToVector ($8EAD): list pointer += Y+1 (TYA/SEC/ADC BLUE). */
+/* AddY1ToVector ($8EAD): list pointer += Y+1 (TYA/SEC/ADC VGLIST). */
 static void vg_advance(uint8_t y)
 {
     unsigned s = (unsigned)g.ram[0x01] + y + 1u;
@@ -85,7 +86,7 @@ static void vg_jump_word(uint8_t a, uint8_t x, uint8_t op)
 void vg_add_jmpl(uint8_t a_hi, uint8_t x_lo) { vg_jump_word(a_hi, x_lo, 0xE0); }
 void vg_add_jsrl(uint8_t a_hi, uint8_t x_lo) { vg_jump_word(a_hi, x_lo, 0xA0); }
 
-/* VglistVglist1Vector ($8E95): COLOR word from the current BLACK byte.
+/* VglistVglist1Vector ($8E95): COLOR word from the current VGBRIT byte.
  * SetVectorGeneratorStatus ($8E97): COLOR word $64xx, low byte y
  *   (y = (luminance<<4)|color on this hardware).
  * SetHoldingBufferZ ($8E9D): STAT word $60xx, low byte y. */
@@ -108,16 +109,16 @@ void use_full_size(uint8_t a_bshift) { set_vg_scale(a_bshift, 0); }
 
 /* AddVectorToVector ($8EF6): emit a 2-word VCTR from the zero-page quad at
  * x_index: Y delta from zp[2+x]/zp[3+x], X delta from zp[0+x]/zp[1+x]
- * (16-bit, sign-extended), z field = top 3 bits of BLACK ($00) OR'd over
+ * (16-bit, sign-extended), z field = top 3 bits of VGBRIT ($00) OR'd over
  * the X MSB. With the standard x_index 3 that is CHAN3V/TWOPI ($05/$06)
- * and CHAN2V/RED ($03/$04). Advances 4. */
+ * and XCOMP/RED ($03/$04). Advances 4. */
 void vg_add_vector_from_zp(uint8_t x_index)
 {
     uint8_t black = g.ram[0x00];
     vg_store(0, g.ram[(uint8_t)(0x02 + x_index)]);                 /* Y LSB */
     vg_store(1, (uint8_t)(g.ram[(uint8_t)(0x03 + x_index)] & 0x1F)); /* Y MSB */
     vg_store(2, g.ram[(uint8_t)(0x00 + x_index)]);                 /* X LSB */
-    /* (RED-style MSB & $1F) | (BLACK & $E0): EOR/AND/EOR combine at $8F08 */
+    /* (RED-style MSB & $1F) | (VGBRIT & $E0): EOR/AND/EOR combine at $8F08 */
     vg_store(3, (uint8_t)((g.ram[(uint8_t)(0x01 + x_index)] & 0x1F) |
                           (black & 0xE0)));
     vg_advance(3);
@@ -127,7 +128,7 @@ void vg_add_vector_from_zp(uint8_t x_index)
  * written becomes the AVG's first word, which is Y). Both are negated when
  * UPDOWN bit 7 is set (cocktail flip), sign-extended and shifted left 2
  * (so delta 1 at scale 0 = a dot), staged in the zp quad, then emitted.
- * BLACK must already hold the z byte (see the entry wrappers below). */
+ * VGBRIT must already hold the z byte (see the entry wrappers below). */
 void vg_vctr(uint8_t a_dx, uint8_t x_dy)
 {
     uint8_t updown = g.ram[A_UPDOWN];
@@ -140,7 +141,7 @@ void vg_vctr(uint8_t a_dx, uint8_t x_dy)
     hi = (uint8_t)((hi << 2) | ((v & 0xC0) >> 6));     /* two ASL/ROL steps   */
     lo = (uint8_t)(v << 2);
     g.ram[0x04] = hi;                                  /* RED    = X MSB      */
-    g.ram[0x03] = lo;                                  /* CHAN2V = X LSB      */
+    g.ram[0x03] = lo;                                  /* XCOMP = X LSB      */
 
     v = x_dy;
     if (updown & 0x80) v = (uint8_t)(0u - v);
@@ -155,7 +156,7 @@ void vg_vctr(uint8_t a_dx, uint8_t x_dy)
 
 /* UpdownVectorUpsideDown ($8EC1): z byte = 0 (dark move), then vg_vctr.
  * ShortFormVgvctrCall ($8EC3): z byte = y, then vg_vctr.
- * Vgvtr1 ($8EC5): BLACK left as the caller staged it. */
+ * Vgvtr1 ($8EC5): VGBRIT left as the caller staged it. */
 void vg_vctr_dark(uint8_t a_dx, uint8_t x_dy)
 {
     g.ram[0x00] = 0;
@@ -168,7 +169,7 @@ void vg_vctr_z(uint8_t a_dx, uint8_t x_dy, uint8_t y_z)
 }
 
 /* NegateALongVector ($8F15): read a 4-byte VCTR through the pointer at
- * POKRAN/POTGO ($0A/$0B), append its two's-complement negation with the z
+ * TEMP2/POTGO ($0A/$0B), append its two's-complement negation with the z
  * bits cleared (a dark return leg), advance 4. The 16-bit negation is done
  * exactly as the ROM chains it (EOR/ADC so the carry ripples). */
 void negate_a_long_vector(void)
@@ -241,14 +242,14 @@ void save_input_parameters(uint8_t a_zp, uint8_t y_count, int carry)
         if (nmrock-- == 0) break;                       /* DEC/BPL */
     }
     g.ram[0x11] = 0xFF;                                 /* NMROCK after loop */
-    g.ram[0x10] = temp1;                                /* TEMP1 shadow      */
+    g.ram[0x10] = temp1;                                /* TEMP4 shadow      */
 }
 
 /* ------------------------------------------------------------------ */
 /* public raw-list access for the message processor (AS2MSG writes    */
-/* glyph words at successive (BLUE),Y offsets, then advances once)    */
+/* glyph words at successive (VGLIST),Y offsets, then advances once)    */
 /* ------------------------------------------------------------------ */
 
-void vg_poke_list(uint8_t y, uint8_t v)   { vg_store(y, v); }     /* STA (BLUE),Y */
+void vg_poke_list(uint8_t y, uint8_t v)   { vg_store(y, v); }     /* STA (VGLIST),Y */
 void vg_advance_list(uint8_t y)           { vg_advance(y); }      /* AddY1ToVector: ptr += y+1 */
 int  vg_char(uint8_t char_index, int carry) { return save_c_flag(char_index, carry); } /* SaveCFlag $8E5A */

@@ -45,12 +45,12 @@ extern sd_state g;
 /* $51: two-player/ship-2 active flag (BIT $51 gates ship 1 processing).    */
 #define ZP_51          (g.ram[0x51])
 /* Self-test cells (AS2TST.MAC's own allocations, which spaceduel_defines
- * leaves unnamed): $12/$16/$17 are the BCD scratch above NMROCK/NOBJ that
+ * leaves unnamed): $12/$16/$17 are the BCD scratch above NMROCK/TEMP7 that
  * Averag/HexBcd/Times4Decimal widen into, and $17 doubles as the crosshatch
  * color index; $1A = selected bookkeeping option, $1B = SELECT debounce;
  * $81-$83 = ERPLC+1..3, the bad-POKEY1 / bad-POKEY2 / bad-EAROM flags
- * (ERPLC+0 is COCKBI $80 = bad RAM); $A1 = FRAME, the diagnostic-loop frame
- * counter (TESTNM $A0 is aliased OBJ). */
+ * (ERPLC+0 is COCKBI $80 = bad RAM); $A1 = YINCL, the diagnostic-loop frame
+ * counter (TESTNM $A0 is aliased $00A0). */
 #define ZP_12          (g.ram[0x12])
 #define ZP_16          (g.ram[0x16])
 #define ZP_17          (g.ram[0x17])
@@ -62,7 +62,7 @@ extern sd_state g;
 #define ZP_FRAME       (g.ram[0xA1])
 
 /* The VG display-list pointer is the real zero-page pair the ROM used:
- * lo at $01 (alias BLUE), hi at $02 (alias EAC2). Access as a 16-bit CPU
+ * lo at $01 (alias VGLIST), hi at $02 (alias EAC2). Access as a 16-bit CPU
  * address through these helpers (vgutil.c owns all writes through it). */
 #define VGLIST_ADDR    ((uint16_t)(g.ram[0x01] | ((uint16_t)g.ram[0x02] << 8)))
 

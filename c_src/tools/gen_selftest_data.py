@@ -56,7 +56,7 @@ import paths
 # (name, base, size, strict, comment)
 TABLES = [
     ("selftest_sftjsr", 0x861A, 12, False,
-     "Sftjsr ($861A): RTS jump table of the diagnostic screens, X = OBJ"
+     "Sftjsr ($861A): RTS jump table of the diagnostic screens, X = the screen number at $A0"
      " (code bytes in the listing: bin-only)"),
     ("selftest_sndsel", 0x83B8, 18, True,
      "$83B8 (previous-channel byte) + SoundTableLo $83B9 (9) + Sndfrq $83C2 (8)"),
@@ -144,7 +144,7 @@ def cross_check(img, lst):
     names = ["Stest5", "Cocktail", "Stest7", "Stest8", "SetScale1", "Stst10"]
     for i in range(6):
         tgt = (t[2 * i] | (t[2 * i + 1] << 8)) + 1
-        print("  Sftjsr OBJ=$%02X -> $%04X %s" % (2 * i, tgt, names[i]))
+        print("  Sftjsr screen $A0=$%02X -> $%04X %s" % (2 * i, tgt, names[i]))
 
 
 def emit(img):

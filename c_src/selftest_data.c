@@ -5,7 +5,7 @@
  * in selftest.h. */
 #include <stdint.h>
 
-/* Sftjsr ($861A): RTS jump table of the diagnostic screens, X = OBJ (code bytes in the listing: bin-only) */
+/* Sftjsr ($861A): RTS jump table of the diagnostic screens, X = the screen number at $A0 (code bytes in the listing: bin-only) */
 const uint8_t selftest_sftjsr[0x0C] = {
     /* 861A */ 0xD1,0x82,0xE6,0x82,0x71,0x83,0x78,0x83,0xC9,0x83,0x1E,0x84,
 };

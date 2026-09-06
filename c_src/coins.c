@@ -1,17 +1,17 @@
 /* coins.c - Space Duel C port: the coin/credit routine (COIN65, $741A-$7528).
  *
  * State (all zero page, all oracle-diffed):
- *   TEMP8  $20      credits
- *   TEMP9  $21      coin-routine call counter (per IRQ)
- *   TEMP10 $22      bonus-adder unit-coin accumulator
+ *   DIAGBI  $20      credits
+ *   ZSHIP  $21      coin-routine call counter (per IRQ)
+ *   $0022 $22      bonus-adder unit-coin accumulator
  *   ZPAIR  $23      bonus coins earned
  *   ZMINE  $24      coin option byte: d0-d1 coin mode (0 free play, 1 = 2
  *                   credits/coin, 2 = 1 credit/coin, 3 = 1 credit/2 coins),
  *                   d2-d3 right-mech multiplier (x1/x4/x5/x6), d4 center-
  *                   mech multiplier (x1/x2), d5-d7 bonus-adder mode
- *   TEMPA  $25      pre-coin slam timer (shared by all mechs)
- *   TEMPB  $26      unit-coin count (CNCT)
- *   $27+X  (TEMPC)  per-mech EM coin-counter pulse cell: low nibble =
+ *   $0025  $25      pre-coin slam timer (shared by all mechs)
+ *   $0026  $26      unit-coin count (CNCT)
+ *   $27+X  ($0027)  per-mech EM coin-counter pulse cell: low nibble =
  *                   pulses pending, high nibble = pulse on-time
  *   $2A+X           per-mech post-coin slam timer
  *   $2D+X           per-mech coin status: d0-d4 coin-on down-counter
@@ -20,7 +20,7 @@
  * Mech index X runs 2,1,0 = IN0 coin bits d0,d1,d2 (X=0 is the left mech).
  * Inputs are ACTIVE LOW: coin bit high = coin absent, IN0 d3 high = slam
  * switch off. NOTES_oracle.md: the oracle idles IN0 low, so the slam input
- * reads active and TEMPA is reloaded to $F0 every IRQ, zeroing $2A-$2F -
+ * reads active and $0025 is reloaded to $F0 every IRQ, zeroing $2A-$2F -
  * that polarity is deliberate and reproduced here (IN0 is re-read from the
  * seam for every mech and again for the slam check, exactly like the ROM).
  */
@@ -45,28 +45,28 @@ static void ext(void)
     uint8_t on;
     int x;
 
-    TEMP9++;                             /* L74FA INC TEMP9                 */
-    if (TEMP9 & 0x01)                    /* L74FC/FE LSR / BCS Ext_99       */
+    ZSHIP++;                             /* L74FA INC ZSHIP                 */
+    if (ZSHIP & 0x01)                    /* L74FC/FE LSR / BCS Ext_99       */
         return;
     on = 0;                              /* L7501 LDY #$00                  */
     for (x = 2; x >= 0; x--) {           /* L7503 LDX #$02 ... L7513 BPL    */
-        uint8_t t = g.ram[A_TEMPC + x];  /* L7505                           */
+        uint8_t t = g.ram[0x0027 + x];  /* L7505                           */
         if (t == 0)                      /* BEQ Ext_3                       */
             continue;
         if (t < 0x10)                    /* L7509 CMP #$10 / BCC: pending   */
             continue;
         t = (uint8_t)(t + 0xF0);         /* L750D ADC #$EF (C=1): dec MSBs  */
         on++;                            /* L750F INY: a pulse is running   */
-        g.ram[A_TEMPC + x] = t;          /* L7510                           */
+        g.ram[0x0027 + x] = t;          /* L7510                           */
     }
     if (on != 0)                         /* L7515/16: skip if any on        */
         return;
     for (x = 2; x >= 0; x--) {           /* L7518 LDX #$02 ... L7526 BPL    */
-        uint8_t t = g.ram[A_TEMPC + x];  /* L751A                           */
+        uint8_t t = g.ram[0x0027 + x];  /* L751A                           */
         if (t == 0)                      /* BEQ Ext_5                       */
             continue;
         t = (uint8_t)(t + 0xEF);         /* L751E CLC / ADC #$EF: start it  */
-        g.ram[A_TEMPC + x] = t;          /* L7521                           */
+        g.ram[0x0027 + x] = t;          /* L7521                           */
         if (t & 0x80)                    /* L7523 BMI Ext_99: only one      */
             return;
     }
@@ -75,7 +75,7 @@ static void ext(void)
 /* Extb ($74D7): convert unit-coins to credits. Price = 1 unit-coin in
  * modes 1 and 2, 2 in mode 3; mode 1 pays two credits. Bonus coins
  * (ZPAIR) can cover a shortfall. Mode 0 = free play: CNCT is cleared
- * (the L74DC BEQ lands on L_2's STA TEMPB with A = 0). Falls into Ext. */
+ * (the L74DC BEQ lands on L_2's STA $0026 with A = 0). Falls into Ext. */
 static void extb(void)
 {
     uint8_t mode, a;
@@ -85,8 +85,8 @@ static void extb(void)
         a = 0;
     } else {
         uint8_t price = (uint8_t)((mode >> 1) + (mode & 0x01)); /* L74DE/DF */
-        unsigned diff = (unsigned)TEMPB + (unsigned)(uint8_t)~price + 1u;
-        a = (uint8_t)diff;               /* L74E1-E4 EOR/SEC/ADC TEMPB      */
+        unsigned diff = (unsigned)(g.ram[0x0026]) + (unsigned)(uint8_t)~price + 1u;
+        a = (uint8_t)diff;               /* L74E1-E4 EOR/SEC/ADC $0026      */
         if (diff <= 0xFF) {              /* L74E6 BCS L_33: borrow taken    */
             a = (uint8_t)(a + ZPAIR);    /* L74E8 ADC ZPAIR (C=0)           */
             if (a & 0x80) {              /* L74EA BMI Ext: still short      */
@@ -98,10 +98,10 @@ static void extb(void)
         }
         /* L_33 ($74F0)                                                     */
         if (mode < 2)                    /* CPY #$02 / BCS L_1              */
-            TEMP8++;                     /* L74F4: mode 1 gives 2           */
-        TEMP8++;                         /* L_1 ($74F6)                     */
+            DIAGBI++;                     /* L74F4: mode 1 gives 2           */
+        DIAGBI++;                         /* L_1 ($74F6)                     */
     }
-    TEMPB = a;                           /* L_2 ($74F8): update CNCT        */
+    (g.ram[0x0026]) = a;                           /* L_2 ($74F8): update CNCT        */
     ext();
 }
 
@@ -113,9 +113,9 @@ static void get_bonus_adder_mode(void)
     uint8_t y, a;
 
     y = (uint8_t)(ZMINE >> 5);           /* L74B3-BA: bonus mode, TAY       */
-    a = (uint8_t)(TEMP10 - number_unit_coins_required[y]); /* L74BB-BE      */
+    a = (uint8_t)((g.ram[0x0022]) - number_unit_coins_required[y]); /* L74BB-BE      */
     if (!(a & 0x80)) {                   /* L74C1 BMI Extb: not enough      */
-        TEMP10 = a;                      /* L74C3                           */
+        (g.ram[0x0022]) = a;                      /* L74C3                           */
         ZPAIR++;                         /* L74C5                           */
         if (y == 0x03)                   /* L74C7 CPY #$03 / BNE Extb       */
             ZPAIR++;                     /* L74CB: 2 bonus for 4 inserted   */
@@ -167,7 +167,7 @@ void coin_routine(void)
             if (a != 0) {                /* L742E BEQ _1: stick at 0        */
                 if (a >= 0x1B)           /* L7430 CMP #$1B / BCS _10        */
                     a--;                 /* _10 SBC #$01 (C=1): run fast    */
-                else if ((TEMP9 & 0x07) == 0x07) /* L7435-3C: 1 per 8 IRQs  */
+                else if ((ZSHIP & 0x07) == 0x07) /* L7435-3C: 1 per 8 IRQs  */
                     a--;
             }
         }
@@ -175,10 +175,10 @@ void coin_routine(void)
 
         /* slam switch (IN0 re-read, d3 low = active)                       */
         if (!(sd_hw_in0() & 0x08))       /* L7442/45/47                     */
-            TEMPA = 0xF0;                /* L7449/4B: pre-coin slam timer   */
+            (g.ram[0x0025]) = 0xF0;                /* L7449/4B: pre-coin slam timer   */
         /* _2 ($744D)                                                       */
-        if (TEMPA != 0) {
-            TEMPA--;                     /* L7451                           */
+        if ((g.ram[0x0025]) != 0) {
+            (g.ram[0x0025])--;                     /* L7451                           */
             g.ram[0x2D + x] = 0;         /* L7455: clear coin status        */
             g.ram[0x2A + x] = 0;         /* L7457: clear post-coin timer    */
         }
@@ -202,9 +202,9 @@ tally:  /* _8 ($7481)                                                       */
             }
             /* (x == 0, left mech: always 1 unit - L7487 BCC L749F)         */
             /* L749F SEC/PHA/ADC/STA/PLA/SEC/ADC/STA: add units+1 to both   */
-            TEMP10 = (uint8_t)(TEMP10 + units + 1); /* bonus-adder counter  */
-            TEMPB  = (uint8_t)(TEMPB + units + 1);  /* CNCT                 */
-            g.ram[A_TEMPC + x]++;        /* L74AB: queue an EM pulse        */
+            (g.ram[0x0022]) = (uint8_t)((g.ram[0x0022]) + units + 1); /* bonus-adder counter  */
+            (g.ram[0x0026])  = (uint8_t)((g.ram[0x0026]) + units + 1);  /* CNCT                 */
+            g.ram[0x0027 + x]++;        /* L74AB: queue an EM pulse        */
         }
         /* _9 ($74AD) DEX / BMI GetBonusAdderMode / JMP L741C               */
     }

@@ -23,7 +23,7 @@ as still-to-do.
   into `inselo()` ($50D5) which RTSL-fills the rock/saucer slot area
   $2290-$22FF and seeds the saucer color words. `display_parameters()`
   ($5CF2) is the per-frame updater: for whichever of PL0SCFLAG/PL1SCFLAG/
-  CMBSCFLAG has bit 7 set, it repoints BLUE/EAC2 straight at that area's
+  CMBSCFLAG has bit 7 set, it repoints VGLIST/EAC2 straight at that area's
   live block and calls `temp3_which_player0()` (Temp3WhichPlayer0, $5C24,
   static) to redraw the 3-BCD-pair score + phantom zero and, unless the
   area's flag bit 6 says lives live elsewhere, the row of remaining-ship
@@ -38,8 +38,8 @@ as still-to-do.
   `display_an_initial()` draws either a glyph or (for a still-blank slot
   mid-entry) an underline cursor.
 - **Object pictures.** `pictur()` ($5D6D) is the per-object dispatcher,
-  called once per displayed object with `x` = object index (`XCOMP`) and
-  the object's screen position staged in RED/CHAN2V, TWOPI/CHAN3V by
+  called once per displayed object with `x` = object index (`TEMP3`) and
+  the object's screen position staged in RED/XCOMP, TWOPI/CHAN3V by
   `MotionUpdateRoutine` (objects.c, not yet written). It always emits the
   JSRL $30B6 + centered-position VCTR first, then classifies: exploding
   ships go to `ship_exploding_pictures()` (flash + drifting debris pieces
@@ -67,7 +67,7 @@ as still-to-do.
   sound, explodes the other ship, and hands off to `get_comet_to_go()`.
 - **Fuse/rod sparks.** `spark2()` ($638F), every other frame (`ZP_44 & 1`,
   and only outside self-test), rebuilds the 4-spoke SPARKB slot ($22D0)
-  directly in vector RAM by repointing BLUE/EAC2 there: each spoke's angle
+  directly in vector RAM by repointing VGLIST/EAC2 there: each spoke's angle
   is re-randomized (POKEY RANDOM) when its 16-count phase wraps, and its
   length is `phase * sin/cos` via the trig pack, emitted as an
   out-and-back VCTR pair.
@@ -94,7 +94,7 @@ taking the prior finding on faith:
 
 - `shpdisplays()` loads the fixed counts from `dsp_rom_63F0`
   (CountWholeShipVectors $63D7/$63D8 = `{0x16,0x14}` = 22/20, so Fall's
-  `WHITE=cnt` loop runs `cnt+1` times = 23/21 records - matches "SHPA
+  `TEMP1=cnt` loop runs `cnt+1` times = 23/21 records - matches "SHPA
   records ... SHPB records" exactly) and only swaps in
   CountShipWithThrust ($63D9/$63DA = `{0x1A,0x18}` = 26/24, i.e. +4) when
   every one of the ROM's thrust gates holds (not attract, thrust switch
@@ -104,15 +104,15 @@ taking the prior finding on faith:
   (`neg_x`/`neg_y` from `$12` bits 7/6) - verified line-by-line against
   all four ROM bodies ($6444-$6529): the negate-or-not choice, the msb
   selection ($00/$1F for Y, $20/$3F for X - the $20 IS the SHPLUM z=1 bit)
-  and the read order (Y byte first, then `INC POKRAN`, then X byte, then
-  `INC POKRAN`) match in every combination. `AlsoUsedFromBelow` ($6553)
+  and the read order (Y byte first, then `INC TEMP2`, then X byte, then
+  `INC TEMP2`) match in every combination. `AlsoUsedFromBelow` ($6553)
   is a bare RTS also reached externally from `SplitRockIntoFragments`
   (objects.c territory) via `BCS` - a ROM byte-space reuse trick, not a
   routine with a body; folding it as a plain `return y;` inside
   `routine_also_does_blanking()` reproduces it exactly and needs no
   separate C entry point (CONVENTIONS rule 1: no *code* is being skipped).
 - `then_partially_damaged()` reproduces the codicil precisely, including
-  the ROM quirk noted in its own comment: `POKRAN = y` (STY POKRAN) only
+  the ROM quirk noted in its own comment: `TEMP2 = y` (STY TEMP2) only
   happens on the `y >= 0x1E` path, which is the only path any real ship
   count reaches (23/21/27/25 records always overflow 0x1E long before the
   loop ends) - **and this quirk turns out to matter beyond graphics**: see
@@ -142,27 +142,27 @@ doubly-checked.
   calls since C has no fallthrough between functions.
 - `entparams()` / `display_parameters()`: no args, no return; called once
   per frame from the mainline's per-frame display-build sequence.
-- `pictur(x)`: x = object index ($00-$2F) = XCOMP, which the caller must
-  already have set (several internal reads use `XCOMP` directly rather
-  than the parameter, exactly mirroring the ROM's `LDX XCOMP` reloads
-  after calls that clobber X); RED/CHAN2V and TWOPI/CHAN3V must already
+- `pictur(x)`: x = object index ($00-$2F) = TEMP3, which the caller must
+  already have set (several internal reads use `TEMP3` directly rather
+  than the parameter, exactly mirroring the ROM's `LDX TEMP3` reloads
+  after calls that clobber X); RED/XCOMP and TWOPI/CHAN3V must already
   hold the object's screen position. No return value.
 - `cc_carry_set_displaying()`: no args; always returns 0 (C clear) - CLC/
   RTS, literally a stub in the ROM.
 - `scores()`: no args; returns C (1 = a table is still being shown, 0 =
-  done). Reads/writes SHHIGH, LASTG, ZP_45, TEMP2, XCOMP, FLSFLG etc.
+  done). Reads/writes SHHIGH, LASTG, ZP_45, TEMP5, TEMP3, FLSFLG etc.
 - `amount_add_routine_limits(a)`: a = amount to add to the 16-bit
   LNGTIMER/$03BA game timer; saturates at $04xx by forcing LNGTIMER=$FF.
   No return.
 - `display_ship_picture(x)` / `shpdisplays(x, y)`: x = object index
-  ($21/$22), already staged in XCOMP by the caller; for `shpdisplays`, y =
+  ($21/$22), already staged in TEMP3 by the caller; for `shpdisplays`, y =
   index into the $2800 picture-pointer table (angle-derived picture
   number*2 + ShipAddressOffsets). No return; both write directly into the
-  list at the caller's current BLUE/EAC2 position. `display_ship_picture`
+  list at the caller's current VGLIST/EAC2 position. `display_ship_picture`
   falls into `drawrod()` exactly as the ROM does (no RTS between them).
-- `drawrod()`: no args - reads XCOMP (must already be the rigid-pair
-  ship's index) and RODSTATUS/SPARKTIME/LASTSW. No return.
-- `spark2()`: no args, no return; internally repoints BLUE/EAC2 at SPARKB
+- `drawrod()`: no args - reads TEMP3 (must already be the rigid-pair
+  ship's index) and RODSTATUS/SPARKTIME/TOGCOMB. No return.
+- `spark2()`: no args, no return; internally repoints VGLIST/EAC2 at SPARKB
   ($22D0) and leaves them there (matches the ROM - callers after Spark2
   must not assume the list pointer survived).
 
@@ -229,19 +229,19 @@ extern void bigbang(void);              /* Bigbang $76CC - IS implemented
    pass's cross-module extern audit, not one of the two originally-flagged
    items. `sound.h` (now on disk) declares
    `void explosion(uint8_t x_in, uint8_t y_in)` (the trigger stubs park
-   the caller's live X/Y in TEMP5/TEMP6, an oracle-visible RAM effect -
+   the caller's live X/Y in TEMPA/TEMPB, an oracle-visible RAM effect -
    see NOTES_soundcoins.md), but display.c had `extern void
    explosion(void)` and called it bare. Traced the real values: at the
-   `JSR Explosion` call inside `Drawrod` ($62F4), X is still XCOMP (loaded
+   `JSR Explosion` call inside `Drawrod` ($62F4), X is still TEMP3 (loaded
    at $62D7 and never reloaded; `RandomFuzz`/`StopFuseSound` don't touch
-   X), and **Y is exactly the value in `POKRAN`** - because
+   X), and **Y is exactly the value in `TEMP2`** - because
    `Shpdisplays`'s tail (`ThenPartiallyDamagedOtherwise`, $64AE) does
-   `STY POKRAN` right before `LDY POKRAN; JMP AddY1ToVector`, and
+   `STY TEMP2` right before `LDY TEMP2; JMP AddY1ToVector`, and
    `AddY1ToVector`/`vg_advance_list` never touches Y (checked vgutil.c:
-   `vg_advance()` only does arithmetic on `g.ram[0x01]`), so POKRAN keeps
+   `vg_advance()` only does arithmetic on `g.ram[0x01]`), so TEMP2 keeps
    holding that Y all the way through `Drawrod`'s `vg_add2`/`RandomFuzz`/
-   `StopFuseSound` calls (none of which write POKRAN) until the explosion
-   call. Fixed to `explosion(x, POKRAN)` with a comment explaining the
+   `StopFuseSound` calls (none of which write TEMP2) until the explosion
+   call. Fixed to `explosion(x, TEMP2)` with a comment explaining the
    derivation, and the extern updated to match sound.h.
 
 ## Completeness check
@@ -270,13 +270,13 @@ warnings. (`.obj` files deleted after the check.)
 
 ## Open questions
 
-1. The Y-register derivation for `explosion(x, POKRAN)` (see above) is
+1. The Y-register derivation for `explosion(x, TEMP2)` (see above) is
    correct for *this* call site only, traced by hand through the ROM plus
    vgutil.c/sound.c's actual bodies. If any future module also calls a
    sound.h trigger stub after a Shpdisplays/Fall picture build without an
-   intervening POKRAN write, the same reasoning applies - but nothing
+   intervening TEMP2 write, the same reasoning applies - but nothing
    guarantees it if the call graph changes; worth an oracle-diff check on
-   TEMP6 specifically around ship deaths once app_loop/the harness can run
+   TEMPB specifically around ship deaths once app_loop/the harness can run
    this module end to end.
 2. `random_fuzz`, `stop_fuse_sound`, `get_comet_to_go` are still only
    plain externs (objects.c not yet written); once it exists, verify their
@@ -284,7 +284,7 @@ warnings. (`.obj` files deleted after the check.)
    `random_fuzz()` in particular tail-calls into `sound.h`'s
    `fuse_plyr0/1(x_in, y_in)` internally (per the listing, $6B51/$6B54),
    so whatever X/Y is live when `random_fuzz()` is called in `drawrod()`
-   (X = XCOMP, Y = POKRAN, same reasoning as `explosion`) will matter
+   (X = TEMP3, Y = TEMP2, same reasoning as `explosion`) will matter
    there too once objects.c defines it with real parameters.
 3. No oracle/probe exists yet for this module (none was requested this
    pass - no harness or `tests/ref` scenario currently exercises display.c

@@ -39,8 +39,8 @@ void entparams(void);
 void display_parameters(void);
 
 /* Pictur ($5D6D): draw object x's picture. Caller protocol (Moti20_121):
- * x = object index ($00-$2F), XCOMP ($0C) already = x, and the object's
- * screen position is staged in RED/CHAN2V (X) and TWOPI/CHAN3V (Y). */
+ * x = object index ($00-$2F), TEMP3 ($0C) already = x, and the object's
+ * screen position is staged in RED/XCOMP (X) and TWOPI/CHAN3V (Y). */
 void pictur(uint8_t x);
 
 /* CcCarrySetDisplaying ($6002): returns C = 0 (not displaying). */
@@ -56,7 +56,7 @@ void amount_add_routine_limits(uint8_t a);
 
 /* DisplayShipPicture ($6259): shield STAT + JSRL, player color STAT, then
  * the reflected ship picture via Shpdisplays; falls into Drawrod.
- * x = object index ($21/$22), XCOMP already = x. */
+ * x = object index ($21/$22), TEMP3 already = x. */
 void display_ship_picture(uint8_t x);
 
 /* Expset ($623E): seed the 12 explosion-piece coordinate pairs for ship x
@@ -65,7 +65,7 @@ void display_ship_picture(uint8_t x);
 void expset(uint8_t x);
 
 /* Drawrod ($62C6): the connecting rod between the ship pair (combined
- * games), including the fuse-burn shrink and spark JSRL. Uses XCOMP. */
+ * games), including the fuse-burn shrink and spark JSRL. Uses TEMP3. */
 void drawrod(void);
 
 /* Spark2 ($638F): rebuild the SPARKB ($22D0) spark-spoke vectors directly
