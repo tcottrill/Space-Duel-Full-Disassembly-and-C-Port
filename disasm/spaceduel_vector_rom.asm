@@ -1156,6 +1156,8 @@ V30BA:  RTSL                          ;C000
 
 QHEADER:         ;JSRL operand $85E
 ;  secondary entry points: CHAR.C, CHAR.D, CHAR.E, CHAR.F, CHARF1
+;  no lit vectors - beam positioning / clip / advance list,
+;  not a drawable shape; renders blank by design
 V30BC:  CNTR                          ;8040
 V30BE:  JSRL   $2300                  ;A180
 V30C0:  JSRL   $230A                  ;A185
@@ -1377,6 +1379,8 @@ V31B4:  SVEC   16, 0, 1               ;4028
 V31B6:  JMPL   $31C4                  ;E8E2
 
 CHR_T:           ;JSRL operand $8DC
+;  no lit vectors - beam positioning / clip / advance list,
+;  not a drawable shape; renders blank by design
 ;  refs: vector ROM $3286
 ;  refs: vector ROM $3F00
 ;  refs: main ROM $7645
@@ -1443,6 +1447,8 @@ V31F4:  SVEC   -16, -24, 1            ;5438
 V31F6:  JMPL   $3206                  ;E903
 
 CHR_1:           ;JSRL operand $8FC
+;  no lit vectors - beam positioning / clip / advance list,
+;  not a drawable shape; renders blank by design
 ;  refs: vector ROM $324E
 ;  refs: vector ROM $32E0
 V31F8:  SVEC   8, 24, 0               ;4C04
@@ -1801,6 +1807,8 @@ V33C2:  SVEC   -16, 0, 5              ;40B8
 V33C4:  JMPL   $33D2                  ;E9E9
 
 CHRF_T:          ;JSRL operand $9E3
+;  no lit vectors - beam positioning / clip / advance list,
+;  not a drawable shape; renders blank by design
 ;  refs: vector ROM $3494
 V33C6:  SVEC   0, -24, 0              ;5400
 V33C8:  JMPL   $3354                  ;E9AA
@@ -1857,6 +1865,8 @@ V3402:  SVEC   16, 24, 5              ;4CA8
 V3404:  JMPL   $3414                  ;EA0A
 
 CHRF_1:          ;JSRL operand $A03
+;  no lit vectors - beam positioning / clip / advance list,
+;  not a drawable shape; renders blank by design
 ;  refs: vector ROM $345C
 ;  refs: main ROM $4F94
 ;  refs: main ROM $6FFF
@@ -2005,6 +2015,8 @@ V34EA:  RTSL                          ;C000
 
 QTST6:           ;JSRL operand $A76
 ;  secondary entry points: WNDSET
+;  no lit vectors - beam positioning / clip / advance list,
+;  not a drawable shape; renders blank by design
 V34EC:  COLOR  $7, 12                 ;64C7
 V34EE:  CNTR                          ;8040
 V34F0:  JMPL   UCHR.B                 ;E94C
@@ -2173,6 +2185,8 @@ V363A:  VCTR   -38, -12, 0            ;1FF4 1FDA
 V363E:  RTSL                          ;C000
 
 EXP12:          ;JSRL operand $B20  -- name from AS2ROM source order only, UNVERIFIED
+;  no lit vectors - beam positioning / clip / advance list,
+;  not a drawable shape; renders blank by design
 ;  refs: vector ROM $3A6B
 ;  refs: main ROM $527A
 ;  refs: main ROM $67E3

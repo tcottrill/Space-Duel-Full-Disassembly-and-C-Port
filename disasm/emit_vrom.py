@@ -12,7 +12,7 @@ round-trip exactly is emitted as raw .word so the file stays byte-faithful.
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 import paths
-import image, avg, vecmap, shippix, rom_names, shapes as shp
+import image, avg, vecmap, shippix, rom_names, shapes as shp, emit_shapes
 
 def sm13(v):
     """13-bit two's complement, matching VGMC.MAC's .WORD DY&^H1FFF."""
@@ -162,6 +162,13 @@ def emit(path=None):
                 L.append(";  %s" % desc[a])
             if secondary.get(a):
                 L.append(";  secondary entry points: %s" % ", ".join(secondary[a]))
+            # Stop at RTSL, HALT *or* JMPL: JMPL is an unconditional transfer,
+            # so bytes after it belong to whatever comes next in the ROM, not
+            # to this object. Stopping only at RTSL/HALT ran this scan on past
+            # a JMPL in 53 of 154 named/secondary objects, and flipped "lit"
+            # from correctly False to wrongly True in 7 of them (QHEADER,
+            # CHR_T, CHR_1, CHRF_T, CHRF_1, QTST6, EXP12) by picking up a lit
+            # vector that belongs to the next object in ROM order.
             lit = False
             p2 = a
             while p2 <= 0x3FFF:
@@ -170,7 +177,7 @@ def emit(path=None):
                     break
                 if dd[0] in ("VCTR", "SVEC") and dd[1].split(",")[-1].strip() != "0":
                     lit = True
-                if dd[0] in ("RTSL", "HALT"):
+                if dd[0] in emit_shapes.TERMINATORS:
                     break
                 p2 += dd[2]
             if not lit:

@@ -153,6 +153,16 @@ def scal_factor(b, lin):
     -> factor = ((~lin)&0xFF)/256 / 2^b   (the linear part is complemented)."""
     return ((~lin) & 0xFF) / 256.0 / (1 << (b & 7))
 
+
+# The three opcodes that end an AVG list.  JMPL belongs here with RTSL and
+# HALT: it is an unconditional transfer, so nothing after it executes and the
+# bytes that follow it belong to whatever comes next in the ROM, not to this
+# list.  A walk that stops only at RTSL/HALT runs on past a JMPL into
+# unrelated bytes -- 53 of Space Duel's 154 named/secondary label addresses
+# do exactly that in emit_vrom.py's lit scan, and 26 of the 58 glyphs entered
+# mid-block do it in the preview walk below, both before this fix.
+TERMINATORS = ("RTSL", "HALT", "JMPL")
+
 def avg_segments(ops, mem=None, depth=0, state=None):
     """AVG block -> [(x0,y0,x1,y1,draw)].
 
@@ -206,7 +216,7 @@ def avg_segments(ops, mem=None, depth=0, state=None):
                 if not sd:
                     break
                 sub.append((a, sd))
-                if sd[0] in ("RTSL", "HALT"):
+                if sd[0] in TERMINATORS:
                     break
                 a += sd[2]
             segs += avg_segments(sub, mem, depth + 1, state)
@@ -249,7 +259,7 @@ def emit_preview(mem, blks, names, refs, path):
             if not d:
                 break
             sub.append((p, d))
-            if d[0] in ("RTSL", "HALT"):
+            if d[0] in TERMINATORS:
                 break
             p += d[2]
         add("V%04X" % a, names[a][0], avg_segments(sub, mem), a)
