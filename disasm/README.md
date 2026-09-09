@@ -136,33 +136,6 @@ mnemonic in the comment. In the vector ROM, 1,528 AVG entries round-trip
 through the macro encodings exactly and **3 do not**; those three are
 emitted as raw `.word`, again with the decoded meaning in the comment.
 
-### The zero-page map was 9 bytes high
-
-Worth knowing if you have an older copy of the listing. `rammap.py` walks
-`ASTRD2.MAC` accumulating a location counter, and it used to count the
-`.BYTE` and `.WORD` lines that sit *inside* `.MACRO` … `.ENDM` definition
-bodies. A macro definition emits nothing where it is written, only where
-it is called, and four such lines precede the page 0 declarations —
-`ASTRD2.MAC` lines 187 and 190 in `VCTRSC`, 238 in `COLOR`, 260 in
-`MULBLD`, 2+4+2+1 = 9 bytes. Every page 0 and page 1 variable therefore
-landed 9 bytes too high: `VGBRIT` at `$09` instead of `$00`, `SCORE` at
-`$43` instead of `$3A`, `OBJ` at `$A0` instead of `$97`. The page 2/3,
-vector RAM and vector ROM sections open with their own `.=` origins and
-were never affected, nor were the hardware equates.
-
-The ROM itself is the check. `Add2WordsToVector` ($8EA5) stores through
-`STA (VGLIST),Y` and carries with `INC` on the byte above, and the bytes
-say `$01`/`$02`; `BIT $35 / BPL` guards thrust with Atari's own comment
-`NO PICTURE OF THRUST DURING ATTRACT`, so `ATRACT` is `$35`. Both agree
-with the hand-walked layout, at every one of the ~290 instruction sites
-that reference a page 0 name from `ASTRD2.MAC`.
-
-Two long-standing puzzles in the C port's notes dissolved with the fix:
-the "3-byte live score staged under `INTRPT`/`SYNC`" is just `SCORE`, and
-the `$DA/$DB/$DC` read as "`$DD/$DE/$DF` minus 3" is just `HSCORE-3`.
-Names in the listing shifted accordingly; nothing about the decoded bytes
-changed, and `verify.py` still reports 0 mismatches.
-
 ## Tools
 
 | file | role |
@@ -181,7 +154,7 @@ changed, and `verify.py` still reports 0 mismatches.
 | `solve_bases.py` | solves each module's link base definitively, rather than by fixed-point iteration that can settle on a preamble-sized error |
 | `sweep_free.py` | anchor-free base sweep: pick the base that simply locks best, since an anchor taken from a repeated mnemonic run can itself be wrong |
 | `build_map.py` | builds the consolidated source-line → ROM-address map for the whole game |
-| `rammap.py` | recovers the RAM and zero-page variable layout by walking the source's `.BLKB` runs, skipping `.MACRO` bodies (see “The zero-page map was 9 bytes high” below) |
+| `rammap.py` | recovers the RAM and zero-page variable layout by walking the source's `.BLKB` runs, skipping `.MACRO` bodies (the page 0/1 map was once 9 bytes high for want of that; see Method) |
 | `naming.py` | turns Atari's 6-character labels into descriptive names, from the `.SBTTL` prose where there is any |
 | `encode.py` | encodes a 6502 instruction so every emitted line can be byte-checked |
 | `emit.py` | emits the annotated program ROM in Ophis syntax; a line is written from the source mapping only when re-encoding reproduces the ROM bytes |
@@ -223,7 +196,7 @@ source archive are skipped with a message when it is absent, and the run
 ends by listing any checked-in file it changed — regenerating reproduces
 the tree byte for byte.
 
-## Notes
+## Notes (the findings)
 
 | file | contents |
 |---|---|
@@ -321,7 +294,7 @@ ranges below account for 3,011 of the 3,043:
 Every one of the 26,624 bytes is emitted and byte-compared, whether it
 is attributed to a source line or not.
 
-## Claims here were checked rather than assumed
+Claims here were checked rather than assumed:
 
 - **The listing assembles back to the ROM under a third-party
   assembler.** `gen_from_roms.py --check` translates the Ophis listing
@@ -373,6 +346,27 @@ is attributed to a source line or not.
   columns in the source are vestigial — the active `TWBYPIC` macro emits
   `.BYTE YY,XX` and discards brightness — so reading them as terminator
   and pen-up flags underdraws every ship.
+- **The zero-page map was 9 bytes high, and the ROM said so.**
+  `rammap.py` walks `ASTRD2.MAC` accumulating a location counter, and
+  it used to count the `.BYTE` and `.WORD` lines that sit *inside*
+  `.MACRO` … `.ENDM` bodies, which emit nothing where they are written.
+  Four such lines precede the page 0 declarations (`VCTRSC`, `COLOR`,
+  `MULBLD`: 2+4+2+1 bytes), so every page 0 and page 1 variable landed
+  9 bytes too high — `VGBRIT` at `$09` instead of `$00`, `SCORE` at `$43`
+  instead of `$3A`, `OBJ` at `$A0` instead of `$97`. The page 2/3,
+  vector RAM and vector ROM sections open with their own `.=` origins
+  and were never affected, nor were the hardware equates. The ROM is
+  the check: `Add2WordsToVector` (`$8EA5`) stores through
+  `STA (VGLIST),Y` and carries with `INC` on the byte above, and the
+  bytes say `$01`/`$02`; `BIT $35 / BPL` guards thrust under Atari's own
+  `NO PICTURE OF THRUST DURING ATTRACT`, so `ATRACT` is `$35`. Both
+  agree with the corrected walk at every one of the ~290 instruction
+  sites that reference a page 0 name. Two long-standing puzzles in the
+  C port's notes dissolved with the fix — the "3-byte live score staged
+  under `INTRPT`/`SYNC`" is just `SCORE`, and `$DA/$DB/$DC` is
+  `HSCORE-3`. Nothing about the decoded bytes changed, and `verify.py`
+  reported 0 mismatches before and after; older copies of the listing
+  carry the shifted names.
 
 ## Revisions
 

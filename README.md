@@ -13,25 +13,14 @@ the ROM, not by guessing.
 What sets this one apart from a disassembly worked out from scratch:
 Atari's source archive for this game survives, published as
 [historicalsource/space-duel](https://github.com/historicalsource/space-duel)
-under the internal project name **"ASTERIODS 2"**. Its RT-11 link image
-byte-matches the rev-2 ROM set to within two bytes and a stretch of tail
-padding, so this is not blind reverse engineering with names invented to
-taste — it is a transcription with a byte-exact oracle. **Every
+under the internal project name **"ASTERIODS 2"**, and its RT-11 link
+image byte-matches the rev-2 ROM set to within two bytes and a stretch
+of tail padding. So this is not blind reverse engineering: **every
 instruction comment in the listings is Atari's own, and every name is
-either Atari's own identifier or a strict, documented expansion of
-it**, placed on the ROM by locking the assembler source's instruction
-stream against the bytes. A name comes from Atari's `.SBTTL` prose for
-the routine (75 of them, giving names like
-`DestructionDuringCollision`), or from the label's own inline comment,
-or from a strict morpheme expansion of Atari's terse identifier
-(`DIFTBL` → `DifficultyTableLo`), or it is Atari's identifier
-CamelCased and left alone; expansion fires only when the identifier
-decomposes completely, which is why `Updif3` and `Cubltr` keep Atari's
-own spelling. 1,249 of the 1,412 labels carry a real name, and just 3
-of the 132 vector objects still hold a `SHAPE_xxxx` placeholder. Source
-attribution reaches **85.1% of the program ROM — 17,437 of its 20,480
-bytes** — and 7,312 instructions carry the comment their author wrote
-against them. Nothing was named to taste.
+Atari's own identifier or a strict, documented expansion of it**,
+placed on the ROM by locking the source's instruction stream against
+the bytes. Nothing was named to taste;
+[`disasm/README.md`](disasm/README.md) has the counts and the rules.
 
 ## What's in the repository
 
@@ -161,15 +150,13 @@ which is where it is developed and probed.
 
 The target is **rev 2** (MAME `spacduel`). The revision lives in a
 single socket — `136006-201` at R1 is rev 2, `136006-101` is rev 1 —
-and the archive's link image is the rev-1 build, differing from the
-rev-2 ROMs at two bytes and a stretch of tail padding: the checksum at
-`$4000`; `$454D`, which is the only real code change between the
-revisions; and 167 `$00` bytes at `$8F53-$8FF9` that the link image
-does not carry. A single
-changed instruction byte is close enough that the archive's names and
-comments apply to rev 2 directly, with that byte identified where it
-sits. The listings, and the port translated from them, target rev 2.
-See [`disasm/README.md#revisions`](disasm/README.md#revisions).
+and Atari's archive is the rev-1 build, differing from the rev-2 ROMs
+at the checksum byte at `$4000`, one instruction byte at `$454D` (the
+only real code change) and 167 bytes of tail padding the link image
+does not carry. One changed byte is close enough that the archive's
+names and comments apply to rev 2 directly, with that byte identified
+where it sits. See
+[`disasm/README.md#revisions`](disasm/README.md#revisions).
 
 ## Provenance and method
 

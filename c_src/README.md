@@ -220,8 +220,8 @@ python tools/gen_state.py
 ```
 
 That path was exercised in earnest once: the disassembly's page 0 and
-page 1 names turned out to be 9 bytes too high (see *The zero-page map
-was 9 bytes high* in [`../disasm/README.md`](../disasm/README.md)), so
+page 1 names turned out to be 9 bytes too high (the last of the checked
+claims under *Method* in [`../disasm/README.md`](../disasm/README.md)), so
 every alias below `$0200` moved. The port was already reading the right
 cells under the wrong names, so the migration was mechanical — rewrite
 each identifier to whatever the corrected table calls **the same
