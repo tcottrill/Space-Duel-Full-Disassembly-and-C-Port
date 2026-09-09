@@ -312,24 +312,14 @@ void ToggleFullscreen(void)
  * in PHYSICAL PIXELS on any screen (defaults 2.5 and 1.25) - see
  * update_beam_width() for both conversions.  (Until 2026-09-03 the pixel width was a separate
  * linewidth_px key that silently overrode both - editing linewidth did
- * nothing; that key is ignored now.  The Asteroids Deluxe port still
- * reads these two as design units.) */
+ * nothing; that key is ignored now.  The Asteroids Deluxe port uses the
+ * same rule with its 1040-unit projection span.) */
 static float beam_px = 2.5f;             /* [vector] linewidth, pixels      */
 static float beam_feather_px = 1.25f;    /* [vector] line_smoothing, pixels */
 
 static void update_beam_width(void)
 {
-    double vw;
-
-    /* WIDTH IS PROPORTIONAL (2026-09-03, user's choice after trying
-     * constant-pixel): the beam scales with the picture, so a window and
-     * fullscreen look the same relative to the drawing.  [vector]
-     * linewidth is calibrated as pixels at the default DESIGN_W-wide
-     * (1024) window: one design unit of the beam projection's 520-unit
-     * span is 520 / 1024 of a pixel there, so linewidth=2.5 draws 2.5 px
-     * at that size and 2.5 * (viewport width / 1024) px on a bigger
-     * screen. */
-    beam_set_linewidth((float)(beam_px * 520.0 / (double)DESIGN_W));
+    double vw, feather_du, core_px;
 
     /* THE FEATHER IS PHYSICAL PIXELS: anti-aliasing is a property of the
      * pixel grid, not of the drawing, so [vector] line_smoothing means
@@ -343,7 +333,32 @@ static void update_beam_width(void)
     if ((double)SCREEN_H * DESIGN_W < vw * DESIGN_H)
         vw = (double)SCREEN_H * DESIGN_W / (double)DESIGN_H;
     if (vw < 1.0) vw = 1.0;
-    beam_set_smoothing((float)(beam_feather_px * 520.0 / vw));
+    feather_du = beam_feather_px * 520.0 / vw;
+    beam_set_smoothing((float)feather_du);
+
+    /* WIDTH IS PROPORTIONAL (2026-09-03, user's choice after trying
+     * constant-pixel): the beam scales with the picture, so a window and
+     * fullscreen look the same relative to the drawing.  [vector]
+     * linewidth is calibrated as pixels at the default DESIGN_W-wide
+     * (1024) window: one design unit of the beam projection's 520-unit
+     * span is 520 / 1024 of a pixel there, so linewidth=2.5 draws 2.5 px
+     * at that size.
+     *
+     * WHAT SCALES IS THE FULL-INTENSITY CORE, not the geometric width
+     * (2026-09-08, first done in the Asteroids Deluxe port).  The shader
+     * centres its AA ramp on the geometric edge, half inside and half
+     * out, so the fully lit core is the width minus one feather.  Scaling
+     * the geometric width while the feather stays in pixels made the core
+     * grow faster than the picture: with linewidth=1.8 / line_smoothing=0.7
+     * a 1024 window has a 1.1 px core and 4K fullscreen (2880 px
+     * letterboxed, 2.81x) had a 4.4 px one, 4x - the eye reads the core,
+     * so fullscreen looked much fatter than the window.  So: core at 1024
+     * = linewidth - line_smoothing, scaled with the picture, and the pixel
+     * feather added back on top.  At the 1024 window this is exactly the
+     * old geometric width; at 4K the core is 3.1 px instead of 4.4. */
+    core_px = beam_px - beam_feather_px;
+    if (core_px < 0.0) core_px = 0.0;
+    beam_set_linewidth((float)(core_px * 520.0 / (double)DESIGN_W + feather_du));
 }
 
 /* ------------------------------------------------------------------ */
