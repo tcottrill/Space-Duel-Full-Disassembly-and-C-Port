@@ -248,7 +248,8 @@ silently.
 2. Vector side alone, still Space Duel: the vector EPROM in N/P7 with the
    Space Duel bytes. Proves the adapter and the selects for the original
    6K.
-3. Extend `local/sd_jmpl_bits.s` to test word bits 10-12 with HALT
+3. Extend the JMPL bit test (a short list that `HALT`s at each target,
+   kept outside this repository) to test word bits 10-12 with HALT
    targets placed in the vector EPROM at `$4000`, `$4800` and `$5000`.
    That is the only direct proof that the AVG reach and the VA13 wiring
    are right before Gravitar depends on them.
