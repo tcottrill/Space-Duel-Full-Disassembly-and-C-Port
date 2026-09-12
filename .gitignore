@@ -26,6 +26,7 @@ docs/superpowers/
 c_src/obj/
 c_src/sd_win.log
 *.exe
+!c_src/sd_win.exe
 *.obj
 *.pdb
 *.ilk
@@ -34,10 +35,9 @@ c_src/sd_win.log
 *.log.bak
 
 # The hosts' runtime output.  The window host writes sd_win.ini itself
-# with every key at its default on the first run, so a local copy carries
-# the user's own settings.  Sample wavs are the player's own.
+# with every key at its default on the first run; the tracked copy and
+# sd_win.exe are the published defaults and build.  Sample wavs are the player's own.
 c_src/*.nv
-c_src/sd_win.ini
 c_src/samples/*.wav
 c_src/samples/*.zip
 c_src/samples/extras/
