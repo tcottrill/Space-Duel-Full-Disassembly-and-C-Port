@@ -197,6 +197,35 @@ behaviour each shot reshuffles the shield texture. The faster core was copied
 to the AAE tree's sndhrdwr on 2026-09-12 after passing that tree's POKEY
 conformance suite.
 
+## AUDCTL rewrites restarted every tone (AAE, 2026-09-12)
+
+With the core in AAE, Major Havoc's music, Battlezone's start sound and
+Black Widow were garbled while Gravitar, Warlords and Star Wars were fine;
+the pre-copy core and the forced one-clock path were garbled too, so it was
+neither today's copy nor the quiet-clock step. Tracing the adapter
+(`AAE_POKEY_TRACE=<file>` in aae_pokey.cpp records every advance, register
+access and frame drain; `probe_c012294_replay.c` replays a trace through the
+core) showed the timing exact (25000 clocks per 50 Hz frame for Major Havoc,
+37800 per 40 Hz frame for Battlezone, no short frames) and the register use
+distinctive: Major Havoc rewrites AUDCTL $78 twice a frame, Battlezone $00
+every frame. `W_AUDCTL` re-armed all four timers on every write, even a
+rewrite of the same value; the legacy renderer's dividers never saw it, cycle
+audio toggles off those timers, so every write restarted every tone.
+
+Fix: a rewrite of the current value is a no-op (MAME's handler returns early
+on it), timers whose clock and link bits are untouched keep counting, a real
+clock or link change still re-arms (the AAE tree's timing regressions were
+derived with that; carrying the count across a clock change is a separate,
+hardware-measured step). Reset seeds the divisors from the cleared registers
+(28 clocks) instead of the whole base clock, which only worked because the
+first AUDCTL write repaired it. `test_audctl_rewrite.c` (built by
+`build_mute_phase.bat`) covers it. Replaying the traces after the fix puts
+the tones on the legacy renderer's frequencies with the same spectral purity
+(Major Havoc 304/718/270/182/122/162 Hz, Battlezone 434/614/750 Hz), and the
+user confirmed all three games. The AAE and Atari800emu probe suites, timing
+regressions and the Space Duel self-test pass; the golden copy for
+`build_c012294_ab.bat` was refreshed to this core.
+
 The updated full-loop regression failed before the renderer switch. It passes
 at native and 60 fps after integration: over 360 held-shield frames it receives
 exactly 258,048 / 264,600 samples respectively, with zero core audio underruns,

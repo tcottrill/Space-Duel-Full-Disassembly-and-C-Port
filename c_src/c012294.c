@@ -529,7 +529,6 @@ void ad_pokey_reset(ad_pokey *p)
 {
     for (int i = 0; i < 4; ++i) {
         p->AUDF[i] = p->AUDC[i] = 0;
-        p->divisor[i] = p->base_clock;   /* sane before any write */
         p->rmax[i] = 0x7FFFFFFF;
         p->cnt[i] = 0;
         p->out[i] = 0;
@@ -537,6 +536,11 @@ void ad_pokey_reset(ad_pokey *p)
     }
     p->AUDCTL = 0;
     p->base_mult = DIV_64;
+    /* The divisors follow the cleared registers: AUDF 0 on the 64 kHz clock
+     * is a one-pulse period (28 clocks), which is what the counters start
+     * from below.  Seeding them with the whole base clock instead only
+     * worked while an AUDCTL write re-armed every timer. */
+    recompute_all(p);
     p->p4 = p->p5 = p->p9 = p->p17 = p->poly_adjust = 0;
     p->samp_cnt = 0;
     p->samp_max = p->sys_freq ? ((p->base_clock << 8) / p->sys_freq) : 0;
@@ -552,9 +556,9 @@ void ad_pokey_reset(ad_pokey *p)
     p->rng_enabled = 0;
     p->rng_init_prev = 1;   /* reset leaves the chip held, so Init is asserted */
     chain_reset(&p->rng);
-    /* Each timer starts a full period away; divisor[i] was just seeded
-     * to base_clock above (the same "sane before any write" fallback
-     * the divisors themselves use). */
+    /* Each timer starts a full period away - one source pulse, from the
+     * cleared registers above - and the held chip remembers that count
+     * for the release. */
     p->slow_next_64 = 0;
     p->slow_next_15 = 0;
     for (int i = 0; i < 4; ++i) {
@@ -1041,14 +1045,42 @@ void ad_pokey_write(ad_pokey *p, uint8_t reg, uint8_t v)
         p->AUDC[3] = v; p->vol[3] = (v & AUDC_VOLMASK) * POKEY_GAIN;
         recompute_channel(p, 3); update_render_channel(p, 3); break;
 
-    case W_AUDCTL:
+    case W_AUDCTL: {
+        /* A rewrite of the current value is a no-op (MAME pokey.cpp returns
+         * early on it), and a timer whose clocking the write leaves alone
+         * keeps counting: AUDCTL never reloads a counter on the chip, only
+         * STIMER and a borrow do (Altirra HRM 5.3, "Reload timing").  Major
+         * Havoc rewrites $78 twice a frame and Battlezone $00 every frame;
+         * re-arming every timer on each write restarted every tone once the
+         * audio came from the hardware counters.  A timer whose clock source
+         * or pair link DOES change is still re-armed here: the count is kept
+         * in machine cycles aligned to the selected clock, and the timing
+         * regressions (tests/review_pokey_timing.c in the AAE tree) were
+         * derived with that re-arm, so a count carried across a clock change
+         * is a separate, hardware-measured step. */
+        if (v == p->AUDCTL)
+            break;
+        const uint8_t old = p->AUDCTL;
+        bool fast_before[4];
+        for (int w = 0; w < 4; ++w)
+            fast_before[w] = timer_fast_clock(p, w);
         p->AUDCTL = v;
         p->base_mult = (v & CTL_CLK15) ? DIV_15 : DIV_64;
         recompute_all(p);
         for (int i = 0; i < 4; ++i)
             update_render_channel(p, i);
-        rearm_timer(p, 0); rearm_timer(p, 1); rearm_timer(p, 2); rearm_timer(p, 3);
+        const uint8_t changed = (uint8_t)(old ^ v);
+        for (int w = 0; w < 4; ++w) {
+            const bool link_changed = (w < 2) ? (changed & CTL_CH12_JOIN) != 0
+                                              : (changed & CTL_CH34_JOIN) != 0;
+            const bool fast_now = timer_fast_clock(p, w);
+            const bool clock_changed = fast_now != fast_before[w] ||
+                                       (!fast_now && (changed & CTL_CLK15));
+            if (link_changed || clock_changed)
+                rearm_timer(p, w);
+        }
         break;
+    }
 
     case W_STIMER:
         for (int i = 0; i < 4; ++i) { p->cnt[i] = 0; p->out[i] = p->cycle_audio ? 1 : 0; }
