@@ -84,7 +84,7 @@ uint8_t plat_dsw_pokey2(void);
  *    relative to its native rate (1.0 = as recorded) - used for the
  *    force-field hum's rising tone. All no-ops when the wav is missing.
  *  - plat_audio_*: the POKEYs' own output (since 2026-09-03). The core
- *    owns two real POKEY chips (pokey.c, driven register-for-register by
+ *    owns two real POKEY chips (c012294.c, driven register-for-register by
  *    the translated ROM through sd_hw_pokey_write) and renders their
  *    mixed output itself; this seam is only a continuously-fed mono
  *    16-bit PCM stream, pushed a block at a time (one 246 Hz IRQ tick's

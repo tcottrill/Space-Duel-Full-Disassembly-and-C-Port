@@ -21,12 +21,14 @@ echo === probe_selftest
 cl %FLAGS% tests\probe_selftest.c %CORE% /Fe:tests\probe_selftest.exe || exit /b 1
 
 rem The chip models' own checks (verbatim from the Asteroids Deluxe port,
-rem see README.md), independent of the game: probe_pokey drives a local
-rem ad_pokey; probe_er2055 drives a local ad_er2055 directly and then
-rem through earom.c's real state machine.  AD_PROBE exposes pokey.c's
-rem table accessors.
-echo === probe_pokey
-cl %FLAGS% /DAD_PROBE tests\probe_pokey.c pokey.c /Fe:tests\probe_pokey.exe || exit /b 1
+rem see README.md), independent of the game: probe_c012294_audio drives a
+rem local ad_pokey through probe_pokey.c's audio and table checks (its
+rem matching header; the full core suite lives in tests\build_mute_phase.bat
+rem and tests\build_c012294_ab.bat); probe_er2055 drives a local ad_er2055
+rem directly and then through earom.c's real state machine.  AD_PROBE
+rem exposes c012294.c's table accessors.
+echo === probe_c012294_audio
+cl %FLAGS% /DAD_PROBE tests\probe_c012294_audio.c c012294.c /Fe:tests\probe_c012294_audio.exe || exit /b 1
 
 echo === probe_er2055
 cl %FLAGS% tests\probe_er2055.c er2055.c earom.c sd_state.c /Fe:tests\probe_er2055.exe || exit /b 1

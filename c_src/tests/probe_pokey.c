@@ -14,7 +14,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "pokey.h"
+#include "c012294.h"   /* the audio/table checks are reused by probe_c012294_audio.c;
+                        * the RANDOM/timer expectations here date from the
+                        * Asteroids Deluxe core and are not built any more */
 
 /* Where the tables' 17-bit sequence is when the chip's chain has
  * settled under SKCTL reset: entries 0..8 of rand17 are all 0xFF and

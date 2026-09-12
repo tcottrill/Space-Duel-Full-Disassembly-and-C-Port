@@ -51,15 +51,20 @@ Rules:
 5. Hardware I/O only through the `sd_hw_*` seam (sd_hw.h): IN0/IN1 switches,
    POKEY registers (including RANDOM — the PROBES' seam must match the
    oracle's LFSR read for read; the game's seam stands two real chips,
-   `pokey.c`, behind the same calls), EAROM (`er2055.c` in the game), coin
+   `c012294.c`, behind the same calls), EAROM (`er2055.c` in the game), coin
    counters/lamps, VGGO/VGRST, watchdog (no-op), IRQ ack.
    The seam is implemented by app_loop.c (game) or the headless harness
    (probes, with injectable bytes).
-5b. `pokey.c/.h` and `er2055.c/.h` are verbatim copies from the
+5b. `c012294.c/.h` is a verbatim copy of the POKEY core developed in the
+   Atari 800 project and shared with the AAE emulator, `ad_` prefix and all;
+   keep the three copies byte-identical (`tests\build_c012294_ab.bat` hashes
+   any change against a saved golden copy, and the AAE tree's
+   `tests\build_pokey_probe.bat` is its hardware-derived suite).
+   `er2055.c/.h` is a verbatim copy from the
    [Asteroids Deluxe port](https://github.com/tcottrill/Asteroids-Deluxe-Full-Disassembly-and-C-Port),
-   `ad_` prefix and all: that tree is where they are developed and probed. Fix
-   them there and re-copy; never let the two diverge. `tests\probe_pokey.c`
-   and checks 1-5 of `tests\probe_er2055.c` are copies too.
+   where it is developed and probed; fix it there and re-copy. The audio
+   checks in `tests\probe_pokey.c` and checks 1-5 of `tests\probe_er2055.c`
+   are copies too.
    Include them BEFORE sd_state.h: the generated aliases `SKCTL`/`POTGO`
    (the ROM reused the register names for zero-page scratch) would
    otherwise rewrite the struct's field names.

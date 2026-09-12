@@ -9,7 +9,7 @@
  *
  *  (a) the sd_hw_* seam (sd_hw.h) over the platform contract
  *      (platform/sd_platform.h): the IN0/IN1 port-bit encodings and their
- *      polarities, the two POKEYs (pokey.c: RANDOM, the option switches on
+ *      polarities, the two POKEYs (c012294.c: RANDOM, the option switches on
  *      ALLPOT, and the sound the ROM programs into them), the ER2055 EAROM
  *      (er2055.c) and its NVRAM image, the OUT1 latch, and the AVG frame
  *      boundary;
@@ -39,9 +39,9 @@
 
 /* The chip models come first: sd_state_defs.h aliases the ROM's zero-page
  * cells SKCTL ($xx) and POTGO ($xx) as macros - the ROM reused the chip
- * register names for scratch - and pokey.h's struct has fields of those
+ * register names for scratch - and c012294.h's struct has fields of those
  * names.  Parsed before the aliases exist, the struct is fine; this file
- * never touches those fields directly (pokey.c does not include
+ * never touches those fields directly (c012294.c does not include
  * sd_state.h at all). */
 #include "c012294.h"   /* cycle audio shares the chip's hardware counters */
 #include "er2055.h"
@@ -73,7 +73,7 @@ extern void sd_mainline_frame(void); /* mainline.c: one Start2 pass       */
 /* The POKEYs.  Both chips share the 6502's 12.096 MHz / 8 = 1.512 MHz
  * clock (spaceduel_defines.asm; AAE bwidow.cpp's pokey_interface), so one
  * CPU cycle is one POKEY cycle and an IRQ period is exactly 6144 of them.
- * pokey.h's time model: the chip charges nothing on its own, the host
+ * c012294.h's time model: the chip charges nothing on its own, the host
  * feeds it machine time - one IRQ period per IRQ (machine_pump), and a
  * flat SD_RANDOM_READ_COST before each un-annotated game RANDOM read,
  * standing in for the 6502 cycles the read and its neighbours take (the
@@ -229,9 +229,9 @@ uint8_t sd_hw_in1(uint8_t idx)
 /* the two POKEYs ($1000 POKEY1, $1400 POKEY2)                         */
 /* ------------------------------------------------------------------ */
 
-/* Two real chips (pokey.c - the Asteroids Deluxe port's translation of the
- * user's AAE core, its polys MAME 0.286's true LFSRs; a verbatim copy, see
- * README.md).  The translated ROM drives them register for register
+/* Two real chips (c012294.c - the cycle-stepped POKEY core shared with the
+ * AAE and Atari 800 trees, its polys MAME 0.286's true LFSRs; a verbatim
+ * copy, see README.md).  The translated ROM drives them register for register
  * through sd_hw_pokey_write - the script engine's AUDF/AUDC stores every
  * IRQ, Inisou's SKCTL 0-then-7, the self-test's beeps and POTGO strobes -
  * and reads RANDOM and ALLPOT back from them.  pokey[0] is POKEY1
@@ -281,7 +281,7 @@ void sd_hw_pokey_write(int which, uint8_t reg, uint8_t val)
  * Every one of the ROM's reads is the LDA right after an STA to the
  * chip's POTGO (Gtoptn, _12, the self-test's Optn2/sub_8f43/coin screen
  * - checked at all six call sites), so the read always lands inside the
- * scan pokey.c's ALLPOT model is running, where it answers with the
+ * scan c012294.c's ALLPOT model is running, where it answers with the
  * still-counting-line mask: the DIP byte, as the board straps it.  The
  * post-scan 0 that Asteroids Deluxe's PKYTST expects never comes into it
  * here - no read is far enough from its strobe. */
@@ -290,7 +290,7 @@ uint8_t sd_hw_pokey2_optionsw(void) { return ad_pokey_read(&pokey[1], R_ALLPOT);
 
 /* RANDOM ($100A / $140A), from the real polynomial.  The game's reads are
  * not cycle-annotated, so this host moves BOTH chips a flat
- * SD_RANDOM_READ_COST before each one (pokey.h's time model; the chip
+ * SD_RANDOM_READ_COST before each one (c012294.h's time model; the chip
  * itself charges nothing per read, and machine time passes for both
  * chips whichever one the ROM strobes).  Together with the IRQ feed in
  * machine_pump() that is what makes consecutive reads differ - Stest4
@@ -1132,7 +1132,7 @@ int main(int argc, char** argv)
      * the fractional carry), and the chips actually made a sound during
      * the game above (firing, thrusting and exploding all program the
      * POKEYs through the script engine; the peak is 0 only if every
-     * register write was lost on the way to pokey.c). */
+     * register write was lost on the way to c012294.c). */
     {
         double expect = (double)g.irq_count * (double)SD_AUDIO_RATE / SD_IRQ_HZ;
         double got    = (double)hl_audio_frames;

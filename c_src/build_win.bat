@@ -6,7 +6,7 @@ rem rewrite); our code stays /W4 /std:c11.
 rem
 rem Targets:
 rem   sd_win.exe            the game: app_loop.c + every core module +
-rem                         platform\windows\* (pokey.c/er2055.c are the
+rem                         platform\windows\* (c012294.c/er2055.c are the
 rem                         chip models the seam drives - see README.md)
 rem   tests\sd_selftest.exe headless scripted/timed run of the SAME
 rem                         app_loop.c over platform\headless (see the

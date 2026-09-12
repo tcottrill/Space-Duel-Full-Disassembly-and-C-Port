@@ -148,8 +148,7 @@ includes and is shared byte for byte with the AAE emulator and the
 Atari 800 project it is developed in. Runs of event-free clocks are
 stepped together, so it costs about 2% of real time for both chips;
 `tests/build_c012294_ab.bat` proves any change to it bit-identical
-against a saved copy. `c_src/pokey.c`, the Asteroids Deluxe port's
-event-driven renderer, is kept beside it as the comparison baseline.
+against a saved copy.
 
 ## Rev 2
 
@@ -183,14 +182,14 @@ chip model against the chip's documented behaviour.
 
 The disassembly, the tools and the C port are released under the
 **GNU General Public License, version 2 or later**, the same terms as
-MAME (see [`LICENSE`](LICENSE)). Three files carry MAME's BSD-3-Clause
+MAME (see [`LICENSE`](LICENSE)). Two files carry MAME's BSD-3-Clause
 terms for the parts translated from MAME sources, and keep that
-attribution in their headers: `c_src/c012294.c` and `c_src/pokey.c`
-(the POKEY's polynomial counters, its RANDOM register and its SKCTL
-reset model, from `pokey.cpp`) and `c_src/er2055.c` (from
-`er2055.cpp`). The rest of the two POKEY files is translated from the
-AAE emulator's engine-free POKEY core; their timing, pot scanner and
-serial port follow the Altirra Hardware Reference (Avery Lee), and the
+attribution in their headers: `c_src/c012294.c` (the POKEY's polynomial
+counters, its RANDOM register and its SKCTL reset model, from
+`pokey.cpp`) and `c_src/er2055.c` (from `er2055.cpp`). The rest of
+the POKEY file is translated from the AAE emulator's engine-free POKEY
+core; its timing, pot scanner and serial port follow the Altirra
+Hardware Reference (Avery Lee), and the
 RANDOM chain a gate-level transcription of Atari's schematics (Nick
 Mikstas's atari_pokey). The vendored framework files in
 `c_src/platform/windows/` keep their own headers and their own terms.

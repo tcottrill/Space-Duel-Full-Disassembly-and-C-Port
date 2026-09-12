@@ -1,10 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
-#ifdef USE_C012294
 #include "c012294.h"
-#else
-#include "pokey.h"
-#endif
 #include "sd_state.h"
 #include "sound.h"
 
@@ -27,10 +23,8 @@ int main(int argc, char **argv)
     unsigned samples = 0;
     int nonzero = 0;
     for (int i = 0; i < 2; ++i) ad_pokey_init(&chips[i], 1512000, 44100);
-#ifdef USE_C012294
     if (argc > 3 && argv[3][0] == 'c')
         for (int i = 0; i < 2; ++i) ad_pokey_set_cycle_audio(&chips[i], true);
-#endif
     inisou();
     g.ram[0x35] = 0x80;
     for (int tick = 0; tick < 1500; ++tick) {

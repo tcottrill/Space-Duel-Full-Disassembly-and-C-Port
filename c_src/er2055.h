@@ -15,7 +15,7 @@
  * names, for anyone comparing against the .cpp).
  *
  * Not a ROM routine - the chip is hardware EAROM.MAC talks to - so, like
- * pokey.c/.h, this carries no `ad_` prefix and no platform includes: a
+ * c012294.c/.h, this carries an `ad_` prefix and no platform includes: a
  * host owns one `ad_er2055` instance and drives it through these four
  * calls, matching astdelux.h's `ad_hw_earom_*` seam one for one.
  */

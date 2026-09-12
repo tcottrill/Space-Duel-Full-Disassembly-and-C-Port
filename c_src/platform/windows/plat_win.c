@@ -783,7 +783,7 @@ void plat_sample_freq(int channel, float ratio)
     sample_set_freq(channel, (int)(ratio * (float)chan_base[channel] + 0.5f));
 }
 
-/* The POKEYs' own output, streamed: the core renders both chips (pokey.c)
+/* The POKEYs' own output, streamed: the core drains both chips (c012294.c)
  * into one mono block per IRQ tick and pushes it here; mixer.c's stream
  * voice (XAudio2) plays the blocks back to back. [sound] pokey_volume=0
  * refuses the open, and the core stops rendering. */
