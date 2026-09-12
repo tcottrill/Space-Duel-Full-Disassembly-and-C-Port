@@ -71,6 +71,8 @@ static uint8_t dsw_pokey1 = 0x01;
 static uint8_t dsw_pokey2 = 0x00;
 
 uint8_t plat_dsw_pokey1(void) { return dsw_pokey1; }
+static int pokey_skip = 1;            /* [sound] pokey_skip, see sd_platform.h */
+int     plat_pokey_skip(void) { return pokey_skip; }
 uint8_t plat_dsw_pokey2(void) { return dsw_pokey2; }
 
 static uint8_t dip_pick(const char *name, const char *const *names,
@@ -452,6 +454,8 @@ static float beam_proj[16];
 /* [sound] settings, read in plat_init (see there). */
 static int pokey_volume = 100;        /* pokey_volume, percent, 0 = off  */
 static int samples_on = 1;            /* samples: 1 play wavs, 0 mute    */
+static int audio_capture_on = 0;      /* capture: 1 = tee the stream to sd_live.pcm */
+static FILE* audio_capture;           /* the file, while capturing        */
 
 int plat_init(void)
 {
@@ -530,6 +534,15 @@ int plat_init(void)
     set_config_int("sound", "pokey_volume", pokey_volume);
     samples_on = get_config_int("sound", "samples", 1) != 0;
     set_config_int("sound", "samples", samples_on);
+    /* [sound] capture: 1 = also write every block pushed to the POKEY
+     * stream to sd_live.pcm (mono signed 16-bit, 44100 Hz), for checking
+     * what was actually played against the headless captures. */
+    audio_capture_on = get_config_int("sound", "capture", 0) != 0;
+    set_config_int("sound", "capture", audio_capture_on);
+    pokey_skip = get_config_int("sound", "pokey_skip", 1) != 0;
+    set_config_int("sound", "pokey_skip", pokey_skip);
+    LOG_INFO("POKEY cores: quiet-clock skip %s, stream capture %s",
+             pokey_skip ? "on" : "OFF", audio_capture_on ? "on" : "off");
 
     if (!CreateGLContext()) {
         msg_box("Space Duel C", "Failed to create an OpenGL context.");
@@ -791,17 +804,24 @@ int plat_audio_open(int sample_rate)
     if (stream_open(sample_rate, 1) != 0)    /* mono, matches ad_pokey_render */
         return -1;
     stream_set_volume(mixer_percent_to_byte(pokey_volume));
+    if (audio_capture_on) {
+        audio_capture = fopen("sd_live.pcm", "wb");
+        if (audio_capture) LOG_INFO("POKEY stream capture -> sd_live.pcm");
+        else LOG_ERROR("could not open sd_live.pcm for the stream capture");
+    }
     return 0;
 }
 
 void plat_audio_push(const int16_t* pcm, int frames)
 {
     stream_push(pcm, frames);
+    if (audio_capture) fwrite(pcm, sizeof *pcm, (size_t)frames, audio_capture);
 }
 
 void plat_audio_close(void)
 {
     stream_close();
+    if (audio_capture) { fclose(audio_capture); audio_capture = NULL; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -849,8 +869,11 @@ int plat_nvram_write(const void* buf, unsigned len)
 void plat_status_text(const char* s)
 {
     char buf[240];
+    char st[160];
     snprintf(buf, sizeof buf, "Space Duel C  %s  - " KEY_HELP, s);
     set_window_title(buf);
+    stream_stats(st, sizeof st);
+    LOG_INFO("%s", st);
     /* Also to sd_win.log. The core sends this about once a second and it
      * carries the pacing numbers (fps, frame time, display-list size); a
      * window title cannot be read back from a scripted/background run, and

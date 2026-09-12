@@ -19,7 +19,7 @@ cd /d "%~dp0"
 
 set CORE=app_loop.c avg.c coins.c display.c display_data.c earom.c irq.c ^
 lowones.c lowones_data.c mainline.c mainline_data.c msgs.c msgs_data.c ^
-objects.c objects_data.c pokey.c er2055.c samples.c score.c score_data.c sd_state.c ^
+objects.c objects_data.c c012294.c er2055.c samples.c score.c score_data.c sd_state.c ^
 sd_vecrom.c sd_progrom.c selftest.c selftest_data.c sound.c sound_data.c vgutil.c
 
 if not exist obj mkdir obj
@@ -36,7 +36,7 @@ cl /nologo /W3 /MD /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /c ^
 
 rem ---- the game ---------------------------------------------------------
 echo === sd_win.exe
-cl /nologo /W4 /std:c11 /MD /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /I. /Foobj\ ^
+cl /nologo /O2 /W4 /std:c11 /MD /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /I. /Foobj\ ^
    %CORE% platform\windows\plat_win.c ^
    obj\sys_gl.obj obj\glew.obj obj\log.obj ^
    obj\vector_draw.obj obj\mat4.obj obj\rawinput.obj ^
@@ -49,7 +49,7 @@ rem ---- headless self-test (same loop, simulated clock, scripted input) ---
 rem Objects go to obj\selftest\ so they never collide with the game's.
 echo === tests\sd_selftest.exe
 if not exist obj\selftest mkdir obj\selftest
-cl /nologo /W4 /std:c11 /MD /D_CRT_SECURE_NO_WARNINGS /DSD_SELFTEST_MAIN /I. ^
+cl /nologo /O2 /W4 /std:c11 /MD /D_CRT_SECURE_NO_WARNINGS /DSD_SELFTEST_MAIN /I. ^
    /Foobj\selftest\ ^
    %CORE% platform\headless\plat_headless.c ^
    /Fe:tests\sd_selftest.exe || exit /b 1

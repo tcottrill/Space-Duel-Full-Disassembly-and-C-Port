@@ -43,7 +43,7 @@
  * names.  Parsed before the aliases exist, the struct is fine; this file
  * never touches those fields directly (pokey.c does not include
  * sd_state.h at all). */
-#include "pokey.h"
+#include "c012294.h"   /* cycle audio shares the chip's hardware counters */
 #include "er2055.h"
 
 #include "sd_state.h"
@@ -78,8 +78,9 @@ extern void sd_mainline_frame(void); /* mainline.c: one Start2 pass       */
  * flat SD_RANDOM_READ_COST before each un-annotated game RANDOM read,
  * standing in for the 6502 cycles the read and its neighbours take (the
  * same 64 the Asteroids Deluxe host charges).  Both chips are advanced
- * from the same places by the same amounts, as pokey.h asks, so they
- * never drift apart. */
+ * from the same places by the same amounts. Read costs are deducted from
+ * the next IRQ interval, not added on top of it, so audio and machine
+ * time never drift apart. */
 #define SD_POKEY_HZ           1512000u
 #define SD_IRQ_POKEY_CYCLES   6144u          /* 1512000 / 246.09375       */
 #define SD_RANDOM_READ_COST   64u
@@ -237,11 +238,18 @@ uint8_t sd_hw_in1(uint8_t idx)
  * ($1000, sound + the difficulty DIPs on its pot pins), pokey[1] is
  * POKEY2 ($1400, sound + the coinage DIPs). */
 static ad_pokey pokey[2];
+static uint32_t pokey_audio_clock_hz = SD_POKEY_HZ;
+static uint32_t pokey_read_cycles;
 
 static void pokey_init(void)
 {
-    ad_pokey_init(&pokey[0], SD_POKEY_HZ, SD_AUDIO_RATE);
-    ad_pokey_init(&pokey[1], SD_POKEY_HZ, SD_AUDIO_RATE);
+    pokey_read_cycles = 0;
+    ad_pokey_init(&pokey[0], pokey_audio_clock_hz, SD_AUDIO_RATE);
+    ad_pokey_init(&pokey[1], pokey_audio_clock_hz, SD_AUDIO_RATE);
+    ad_pokey_set_cycle_audio(&pokey[0], true);
+    ad_pokey_set_cycle_audio(&pokey[1], true);
+    ad_pokey_set_quiet_skip(&pokey[0], plat_pokey_skip() != 0);
+    ad_pokey_set_quiet_skip(&pokey[1], plat_pokey_skip() != 0);
     ad_pokey_set_allpot(&pokey[0], plat_dsw_pokey1());
     ad_pokey_set_allpot(&pokey[1], plat_dsw_pokey2());
 }
@@ -298,6 +306,7 @@ uint8_t sd_hw_pokey_random(int which)
 {
     ad_pokey_advance(&pokey[0], SD_RANDOM_READ_COST);
     ad_pokey_advance(&pokey[1], SD_RANDOM_READ_COST);
+    pokey_read_cycles += SD_RANDOM_READ_COST;
     return ad_pokey_read(&pokey[which & 1], R_RANDOM);
 }
 
@@ -392,23 +401,31 @@ static void earom_load(void)
 /* POKEY audio: one IRQ tick of rendered sound, pushed to the stream   */
 /* ------------------------------------------------------------------ */
 
-/* One IRQ period of audio is SD_AUDIO_RATE / 246.09375 = 179.2 frames at
- * the authentic rate (the fps lock stretches the period, and the block
- * with it, so the stream stays real time) - not an integer, so a running
- * fractional remainder carries across ticks and the long-run rate is
- * exactly SD_AUDIO_RATE.  Both chips render the same block length and
- * are summed with saturation, as the board's two outputs sum into one
- * amplifier.  Rendered right after sd_irq(), when this tick's register
- * writes from the script engine are in.
+/* advance() produces cycle audio before each IRQ's new register writes.
+ * Drain the completed interval here; writes affect subsequent samples.
+ * One interval is 179.2 samples at native speed, 183.75 at fps_lock=60.
+ * The integer remainder uses the same clock as the core's integrator.
+ * Both chips are summed with saturation into the board's mono output.
  *
  * Synthetic time renders nothing: the power-on fast-forward (boot_fast)
  * runs 1.6 s of IRQs in an instant, and a stream fed that burst would
  * either flush it or carry it as latency for the rest of the run.  The
  * headless self-test is synthetic throughout and has no stream to
- * choke, so there the render runs on every tick and is counted. */
+ * choke, so there every tick is pushed and counted. Discarded boot
+ * audio is still drained, keeping the core's queue empty. */
 static int     audio_live;             /* plat_audio_open succeeded      */
-static double  audio_acc;              /* fractional frames carried over */
+static uint64_t audio_tick_phase;     /* exact sample fraction, in chip Hz */
+static unsigned audio_underrun_frames;
 static int16_t audio_buf[2][512];      /* STREAM_BLOCK_FRAMES is the cap */
+
+/* Diagnostic tick log (SD_TICKLOG=<path> in the environment): one line
+ * per live IRQ tick with the sample count, the RANDOM-read cycles charged
+ * since the previous tick, POKEY1 voice 0's registers and its timer, so a
+ * live capture (plat_win.c's [sound] capture) can be lined up with what
+ * the machine was doing. */
+static FILE    *tick_log;
+static uint32_t tick_log_reads;
+static uint64_t tick_log_samples;
 
 static int    fast_clock;              /* 1 = synthetic time (see below)  */
 static int    selftest_mode;           /* set by the headless main below  */
@@ -418,32 +435,51 @@ static void render_push_audio_tick(void)
 {
     int n, i;
 
-    if (!audio_live) return;
-    if (fast_clock && !selftest_mode) return;
-
-    audio_acc += (double)SD_AUDIO_RATE * mach_tick_ms / 1000.0;
-    n = (int)audio_acc;
-    audio_acc -= (double)n;
+    audio_tick_phase += (uint64_t)SD_AUDIO_RATE * SD_IRQ_POKEY_CYCLES;
+    n = (int)(audio_tick_phase / pokey_audio_clock_hz);
+    audio_tick_phase %= pokey_audio_clock_hz;
     if (n > (int)(sizeof audio_buf[0] / sizeof audio_buf[0][0]))
         n = (int)(sizeof audio_buf[0] / sizeof audio_buf[0][0]);   /* defensive */
     if (n <= 0) return;
 
-    ad_pokey_render(&pokey[0], audio_buf[0], n);
-    ad_pokey_render(&pokey[1], audio_buf[1], n);
+    for (i = 0; i < 2; ++i) {
+        int got = ad_pokey_audio_read(&pokey[i], audio_buf[i], n);
+        if (got < n) {
+            audio_underrun_frames += (unsigned)(n - got);
+            memset(audio_buf[i] + got, 0, (size_t)(n - got) * sizeof audio_buf[i][0]);
+        }
+    }
+    /* Drain fast-forwarded/disabled audio too, so it cannot build a backlog. */
+    if (!audio_live || (fast_clock && !selftest_mode)) return;
     for (i = 0; i < n; i++) {
         int v = (int)audio_buf[0][i] + (int)audio_buf[1][i];
         if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
         audio_buf[0][i] = (int16_t)v;
     }
     plat_audio_push(audio_buf[0], n);
+    if (tick_log) {
+        fprintf(tick_log, "%llu,%u,%d,%u,%02X,%02X,%u,%llu,%u\n",
+                (unsigned long long)tick_log_samples, g.irq_count, n,
+                tick_log_reads, pokey[0].AUDF[0], pokey[0].AUDC[0],
+                pokey[0].tcnt[0], (unsigned long long)pokey[0].cycles,
+                ad_pokey_audio_available(&pokey[0]));
+        tick_log_reads = 0;
+    }
+    tick_log_samples += (uint64_t)n;
 }
 
 static void audio_open(void)
 {
-    audio_acc  = 0.0;
+    audio_tick_phase = 0;
+    audio_underrun_frames = 0;
     audio_live = plat_audio_open(SD_AUDIO_RATE) == 0;
     if (!audio_live)
         fprintf(stderr, "plat_audio_open failed; continuing without POKEY sound\n");
+    {
+        const char *path = getenv("SD_TICKLOG");
+        if (path && !tick_log && (tick_log = fopen(path, "w")) != NULL)
+            fputs("sample,irq,n,read_cycles,audf1,audc1,tcnt0,cycles,queue\n", tick_log);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -484,6 +520,9 @@ void sd_app_set_fps_lock(double fps)
 {
     mach_scale   = (fps > 0.0) ? (SD_IRQ_HZ / 4.0) / fps : 1.0;
     mach_tick_ms = SD_TICK_MS * mach_scale;
+    /* The audio sample clock must follow the same board underclock. */
+    pokey_audio_clock_hz = (uint32_t)(SD_POKEY_HZ / mach_scale + 0.5);
+    if (!pokey_audio_clock_hz) pokey_audio_clock_hz = 1;
 }
 
 static double clock_ms(void) { return fast_clock ? fast_ms : plat_now_ms(); }
@@ -503,10 +542,16 @@ static int machine_pump(void)
 
     while (irq_acc >= mach_tick_ms) {
         irq_acc -= mach_tick_ms;
-        ad_pokey_advance(&pokey[0], SD_IRQ_POKEY_CYCLES);  /* machine time,   */
-        ad_pokey_advance(&pokey[1], SD_IRQ_POKEY_CYCLES);  /* both chips      */
+        /* RANDOM accesses already spent part of this interval. Charging a
+         * full interval again makes cycle audio outrun playback. */
+        uint32_t spent = pokey_read_cycles < SD_IRQ_POKEY_CYCLES ?
+            pokey_read_cycles : SD_IRQ_POKEY_CYCLES;
+        tick_log_reads = pokey_read_cycles;      /* charged before this tick */
+        pokey_read_cycles -= spent;
+        ad_pokey_advance(&pokey[0], SD_IRQ_POKEY_CYCLES - spent);
+        ad_pokey_advance(&pokey[1], SD_IRQ_POKEY_CYCLES - spent);
         sd_irq();
-        render_push_audio_tick();  /* after sd_irq(): this tick's registers */
+        render_push_audio_tick();  /* drain audio already produced by advance */
         n++;
     }
     return n;
@@ -689,14 +734,20 @@ void sd_hw_vggo(void)
         char buf[192];
         snprintf(buf, sizeof buf,
                  "%.1f fps  frame %.2f ms (min %.2f max %.2f)  "
-                 "avg draw %.2f ms  %d segs  %d list bytes",
+                 "avg draw %.2f ms  %d segs  %d list bytes  "
+                 "pokey q %u/%u underrun %u overrun %llu/%llu",
                  (double)fps_frames * 1000.0 / (now - fps_t0),
                  jit_n ? jit_sum / jit_n : 0.0,
                  jit_n ? jit_min : 0.0,
                  jit_n ? jit_max : 0.0,
                  stat_avg_ms,
                  fps_frames ? fps_segs / fps_frames : 0,
-                 stat_words * 2);
+                 stat_words * 2,
+                 ad_pokey_audio_available(&pokey[0]),
+                 ad_pokey_audio_available(&pokey[1]),
+                 audio_underrun_frames,
+                 (unsigned long long)ad_pokey_audio_overruns(&pokey[0]),
+                 (unsigned long long)ad_pokey_audio_overruns(&pokey[1]));
         plat_status_text(buf);
         jit_sum = 0.0; jit_n = 0;
         fps_frames = 0; fps_segs = 0;
@@ -726,6 +777,11 @@ static void boot_fast(void)
     sd_boot();
 
     if (!selftest_mode) {
+        /* Start live output at a fresh sample boundary, retaining oscillators. */
+        ad_pokey_set_cycle_audio(&pokey[0], true);
+        ad_pokey_set_cycle_audio(&pokey[1], true);
+        audio_tick_phase = 0;
+        pokey_read_cycles = 0;
         fast_clock = 0;              /* from here on: the wall clock */
         last_ms    = -1.0;
         irq_acc    = 0.0;

@@ -69,6 +69,10 @@ void plat_input_poll(plat_inputs* in);
  * (POKEY1 $1008, POKEY2 $1408). Platform-owned so a hardware target can
  * wire the real switches; the core interprets the bits. */
 uint8_t plat_dsw_pokey1(void);
+/* Diagnostic: 0 = run the POKEY cores one clock at a time, 1 (default) =
+ * step event-free clock runs together (identical output, far cheaper).
+ * Windows: [sound] pokey_skip in sd_win.ini. */
+int     plat_pokey_skip(void);
 uint8_t plat_dsw_pokey2(void);
 
 /* ---- audio --------------------------------------------------------------

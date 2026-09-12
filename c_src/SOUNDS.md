@@ -125,12 +125,17 @@ the `*1` file):
 | `pop.wav` | rock pop | one-shot, ~40 ms |
 | `forcefield.wav` | challenge-stage hum | **seamless loop**; record at the END-of-challenge (highest) pitch — playback starts 5.2× down-shifted and rises to native as SFREQ walks $FF→$30 |
 
-**The POKEY synth.** `app_loop.c` drives two real POKEY models (`pokey.c`,
-from the
-[Asteroids Deluxe port](https://github.com/tcottrill/Asteroids-Deluxe-Full-Disassembly-and-C-Port))
-with every register write the engine above makes, renders one IRQ tick of
-their summed output per IRQ and streams it to the window (`plat_audio_*`,
-`mixer.c`'s XAudio2 stream voice). The samples and the synth coexist:
-`[sound] pokey_volume` (percent, 0 = synth off) and `[sound] samples`
-(0 = wavs muted) in `sd_win.ini` pick either or both — the trigger stream
-and the register stream are independent seams, as planned.
+**The POKEY synth.** `app_loop.c` drives two real POKEY models
+(`c012294.c`, the cycle-stepped core shared with AAE and the Atari 800
+project) with every register write the engine above makes; the chips
+generate audio from their own counters as machine time advances, and each
+IRQ tick's worth is drained and streamed to the window (`plat_audio_*`,
+`mixer.c`'s XAudio2 stream voice, primed three blocks deep). The samples
+and the synth coexist: `[sound] pokey_volume` (percent, 0 = synth off)
+and `[sound] samples` (0 = wavs muted) in `sd_win.ini` pick either or
+both — the trigger stream and the register stream are independent seams,
+as planned. Diagnostics: `[sound] capture=1` tees the stream to
+`sd_live.pcm`, `[sound] pokey_skip=0` forces the cores through their
+one-clock path, and `sd_win.log` carries per-second stream health
+(starved pushes, flushes, queue depth). See `tests/SHIELD_INVESTIGATION.md`
+for the shield sound's three poly-4 interleavings.

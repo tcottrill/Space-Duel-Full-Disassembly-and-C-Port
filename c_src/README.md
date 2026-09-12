@@ -17,7 +17,7 @@ The display pipeline is the real one. The translated VG utilities
 RAM through the real zero-page list pointer, and `avg.c` — a C
 transcription of the AVG state machine — walks that list, and the
 vector ROM it calls into, and emits line segments. What reaches the
-screen is what the beam drew. Two real POKEYs (`pokey.c`) stand behind
+screen is what the beam drew. Two real POKEYs (`c012294.c`) stand behind
 RANDOM, the option switches on their pot lines and all of the game's
 audio; both chips are rendered every interrupt and streamed to the
 window's audio device. Behind `$0A00`/`$0E80`/`$0F00` sits a real
@@ -165,7 +165,8 @@ directory at the repository root) or the 64K image that
 | `*_data.c/.h` | **generated** — each module's ROM tables, extracted from the 64K image by `tools/gen_*_data.py`, never hand-transcribed |
 | `sd_progrom.c/.h`, `sd_vecrom.c/.h` | **generated** — the program ROM (`$4000-$8FFF`) and the vector ROM (`$2800-$3FFF`) as C data, so the port reads a table at its own ROM address |
 | `sd_bcd.h` | the `SED` helpers |
-| `pokey.c/.h` | the POKEY sound and RNG chip — hardware the ROM talks to, not a ROM routine; byte-identical to the Asteroids Deluxe port's |
+| `c012294.c/.h` | the POKEY sound and RNG chip the game is built with — hardware the ROM talks to, not a ROM routine; a cycle-stepped model shared byte-identical with the AAE and Atari 800 trees (`tests/build_c012294_ab.bat` is its A/B gate) |
+| `pokey.c/.h` | the Asteroids Deluxe port's event-driven POKEY renderer, kept as the comparison baseline; not linked into the game |
 | `er2055.c/.h` | the ER2055 EAROM behind `$0A00`/`$0E80`/`$0F00`, translated from MAME's `er2055.cpp`; byte-identical to the Asteroids Deluxe port's |
 | `samples.c/.h` | optional wav playback over the synthesised sound |
 | `app_loop.c` | the application loop: the `sd_hw_*` seam over the platform contract, machine time, both POKEYs, the EAROM's persistence, and one interrupt's worth of rendered audio per interrupt |

@@ -62,6 +62,7 @@ void plat_video_present(void)
 void plat_input_poll(plat_inputs* in) { *in = hl_inputs; }
 
 uint8_t plat_dsw_pokey1(void) { return hl_dsw_pokey1; }
+int     plat_pokey_skip(void) { return 1; }
 uint8_t plat_dsw_pokey2(void) { return hl_dsw_pokey2; }
 
 /* ---- audio ------------------------------------------------------------ */
