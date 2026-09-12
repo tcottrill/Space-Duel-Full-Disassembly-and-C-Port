@@ -418,15 +418,6 @@ static uint64_t audio_tick_phase;     /* exact sample fraction, in chip Hz */
 static unsigned audio_underrun_frames;
 static int16_t audio_buf[2][512];      /* STREAM_BLOCK_FRAMES is the cap */
 
-/* Diagnostic tick log (SD_TICKLOG=<path> in the environment): one line
- * per live IRQ tick with the sample count, the RANDOM-read cycles charged
- * since the previous tick, POKEY1 voice 0's registers and its timer, so a
- * live capture (plat_win.c's [sound] capture) can be lined up with what
- * the machine was doing. */
-static FILE    *tick_log;
-static uint32_t tick_log_reads;
-static uint64_t tick_log_samples;
-
 static int    fast_clock;              /* 1 = synthetic time (see below)  */
 static int    selftest_mode;           /* set by the headless main below  */
 static double mach_tick_ms;            /* scaled ms per IRQ (see below)   */
@@ -457,15 +448,6 @@ static void render_push_audio_tick(void)
         audio_buf[0][i] = (int16_t)v;
     }
     plat_audio_push(audio_buf[0], n);
-    if (tick_log) {
-        fprintf(tick_log, "%llu,%u,%d,%u,%02X,%02X,%u,%llu,%u\n",
-                (unsigned long long)tick_log_samples, g.irq_count, n,
-                tick_log_reads, pokey[0].AUDF[0], pokey[0].AUDC[0],
-                pokey[0].tcnt[0], (unsigned long long)pokey[0].cycles,
-                ad_pokey_audio_available(&pokey[0]));
-        tick_log_reads = 0;
-    }
-    tick_log_samples += (uint64_t)n;
 }
 
 static void audio_open(void)
@@ -475,11 +457,6 @@ static void audio_open(void)
     audio_live = plat_audio_open(SD_AUDIO_RATE) == 0;
     if (!audio_live)
         fprintf(stderr, "plat_audio_open failed; continuing without POKEY sound\n");
-    {
-        const char *path = getenv("SD_TICKLOG");
-        if (path && !tick_log && (tick_log = fopen(path, "w")) != NULL)
-            fputs("sample,irq,n,read_cycles,audf1,audc1,tcnt0,cycles,queue\n", tick_log);
-    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -546,7 +523,6 @@ static int machine_pump(void)
          * full interval again makes cycle audio outrun playback. */
         uint32_t spent = pokey_read_cycles < SD_IRQ_POKEY_CYCLES ?
             pokey_read_cycles : SD_IRQ_POKEY_CYCLES;
-        tick_log_reads = pokey_read_cycles;      /* charged before this tick */
         pokey_read_cycles -= spent;
         ad_pokey_advance(&pokey[0], SD_IRQ_POKEY_CYCLES - spent);
         ad_pokey_advance(&pokey[1], SD_IRQ_POKEY_CYCLES - spent);

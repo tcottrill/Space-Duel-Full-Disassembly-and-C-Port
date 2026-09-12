@@ -134,8 +134,7 @@ IRQ tick's worth is drained and streamed to the window (`plat_audio_*`,
 and the synth coexist: `[sound] pokey_volume` (percent, 0 = synth off)
 and `[sound] samples` (0 = wavs muted) in `sd_win.ini` pick either or
 both — the trigger stream and the register stream are independent seams,
-as planned. Diagnostics: `[sound] capture=1` tees the stream to
-`sd_live.pcm`, `[sound] pokey_skip=0` forces the cores through their
-one-clock path, and `sd_win.log` carries per-second stream health
+as planned. Diagnostics: `[sound] pokey_skip=0` forces the cores through
+their one-clock path, and `sd_win.log` carries per-second stream health
 (starved pushes, flushes, queue depth). See `tests/SHIELD_INVESTIGATION.md`
 for the shield sound's three poly-4 interleavings.
