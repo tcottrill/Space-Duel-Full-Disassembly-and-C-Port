@@ -178,7 +178,7 @@ directory at the repository root) or the 64K image that
 | `tests/avg_dump.c` | links only the AVG walker; dumps a display list |
 | `tests/color_wheel.c` | a beam-renderer diagnostic, with no ROM and no display list |
 | `tests/ref*`, `tests/sched/` | the oracle's reference dumps and the interrupt-mark schedule |
-| `tools/` | `oracle.py`, `gen_state.py`, `gen_vecrom.py`, `gen_progrom.py`, the per-module `gen_*_data.py`, and `avg_check.py` |
+| `tools/` | `oracle.py`, `gen_state.py`, `gen_vecrom.py`, `gen_progrom.py`, the per-module `gen_*_data.py`, `avg_check.py`, and the two pacing profilers `prof_pass.py` / `prof_fit.py` — observers over the oracle that measure what a mainline pass costs the 6502 |
 | `CONVENTIONS.md` | **read this before adding code** |
 | `DESIGN.md` | the architecture and the verification gates |
 | `FINDINGS.md` | what the port proved, and what it turned up that the disassembly alone could not |

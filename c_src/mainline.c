@@ -1284,6 +1284,11 @@ s60:
     force_field_up();                           /* hum?                   */
     center_beam_in_middle();                    /* minimum beam current   */
     vg_add_halt();                              /* HALT ends the list     */
+    /* Timing sync point only (no ROM instruction): the pass's display list
+     * is complete here and VGLIST/EAC2 gives its length, so this is where
+     * the playable build charges the 6502's own time for the build.  See
+     * sd_hw.h; a no-op in the probes.                                    */
+    sd_hw_list_done();
     spark2();                                   /* move the sparks        */
     /* Timing sync point only (no ROM instruction): on hardware 2-3 of this
      * pass's IRQs have already fired by here, and the very next thing

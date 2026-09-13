@@ -149,6 +149,10 @@ void sd_hw_earom_write(uint8_t off, uint8_t v)
 
 void sd_hw_idle(void) { sd_irq(); }
 void sd_wait_vghalt(void) {}                 /* oracle: never blocks */
+/* The pass's list is complete.  A no-op here: the probe replays the
+ * oracle's recorded IRQ schedule, so it must never spend machine time of
+ * its own (app_loop.c charges the 6502's own pass time there). */
+void sd_hw_list_done(void) {}
 /* self-test seam calls: attract holds the self-test switch off, so the
  * loops that use these never run here (probe_selftest.c implements them) */
 void sd_wait_3khz(uint8_t n) { (void)n; }

@@ -188,8 +188,10 @@ the 6502 sat in them with interrupts enabled:
   cycle-true mame_late model, validated on all 34 captured frames).
 
 Nothing writes down a frame rate. The period **emerges** as
-`max(frame gate, AVG draw time)` — DESIGN.md's rule, fallen out of the two
-waits. `sd_hw_irq_mark()` is a **no-op** here, with the reason in the code:
+`max(frame gate, AVG draw time, the 6502's own time for the pass)` —
+DESIGN.md's rule, fallen out of the two waits plus the CPU-time model added
+on 2026-09-13 (the third term; see "The 6502's own time" below).
+`sd_hw_irq_mark()` is a **no-op** here, with the reason in the code:
 it exists so a *probe* can replay the oracle's recorded `irq_count` at four
 exact ROM locations; on a cabinet real elapsed time already spreads a
 pass's IRQs through it.
@@ -229,6 +231,140 @@ The 45 fps of AAE/MAME is still not what this hardware model produces, and
 NOTES_avg.md already explains why (it is a declared driver constant). Play
 lists here reach ~2.8 kB and ~17 ms — they *do* cross the gate, but not by
 enough to halve the rate.
+
+### The 6502's own time (2026-09-13, backported from the Gravitar port)
+
+The two waits above are the *hardware's* time. The third term is the
+**CPU's**: on the board a Start2 pass is real 6502 work — `Gtoptn` and the
+self-test test before the AVG wait, then `DoLowOnesEvery`, the frame gate,
+the buffer swap at `$404E`, and everything that builds the next list up to
+`L410D JSR AddHaltToVector`. A translated pass costs microseconds, so
+before this the port handed over a finished list on every gate tick and
+could not reproduce the ROM's own overrun frames: the oracle's 600-frame
+attract run takes 4 IRQs on 556 passes but **5, 6 or 7 on 43 of them**, and
+the port took 4 every single time. (Space Duel is milder than Gravitar,
+whose port ran 2-5x too fast without this, because Space Duel's mainline
+strobes the VG itself and its `$33` gate already paces the common case.)
+
+**The costs are measured, not invented.** `tools/prof_fit.py` is an
+observer over `tools/oracle.py` — the hardware model itself untouched, no
+reference bytes written — that reports, per pass, the mainline's own cycles
+(everything but the two hardware waits `$401F`/`$4027` and the IRQ handler)
+against the display-list bytes the pass built, **split PRE/POST at the
+first wait**: PRE is `$4110 → $401F`, POST is the rest.
+`tools/prof_pass.py` is its companion, the per-routine breakdown of one
+pass, for when a state's work does *not* follow its list length.
+
+    py c_src\tools\prof_fit.py  <scratch> 3000 attract [--rows]
+    py c_src\tools\prof_pass.py <scratch> 600 2 attract
+
+Space Duel's equivalent of Gravitar's `(STATE, DSTATE)` pair is
+**`(ATRACT $35, ATSTG $DC)`** — is a game running, and is this the special
+attract stage. Fitted over attract 3000 frames + play 3000 frames +
+selftest 440 frames, **6,046 passes**:
+
+| ATRACT | ATSTG | passes | base | per_byte | sd | pre | handler | list bytes | = IRQ periods of work |
+|---|---|---|---|---|---|---|---|---|---|
+| `$00` | `$00` | 695 | 5047 | 48.28 | 1719 | 1877 | 798 | 190-504 | 2.66-5.50 |
+| `$00` | `$80` | 2482 | 1180 | 56.56 | 1855 | 1864 | 800 | 226-574 | 2.61-6.30 |
+| `$80` | `$00` | 2868 | 2207 | 51.35 | 1853 | 1843 | 490 | 140-302 | 1.66-3.13 |
+| `$80` | `$80` | 1 | 23042 | 0 | — | 307 | 792 | 114 | 4.31 |
+
+`base`/`per_byte`/`pre` are 6502 cycles; `handler` is IRQ-handler cycles
+per IRQ. W cycles of mainline work occupy `W / (6144 - handler)` IRQ
+periods, because the handler steals its share of every period; fractions
+carry over, so a 4.01 averages 4.01. **No state takes Gravitar's
+per-state-mean treatment**: the list length explains most of the spread
+everywhere here (residual sd 1.7-1.9 k cycles against a 3.0-6.5 k spread
+about the plain mean), so `per_byte` is real in all three populated states.
+The `$80/$80` row is the single transition pass into a game; it gets the
+mean because one pass has no slope.
+
+**That the model is the right one is checkable, and it checks.** Group the
+oracle's own attract passes by the number of IRQs it actually spent on
+them, and the measured mainline work per pass is:
+
+| IRQs the oracle spent | passes | mean list bytes | mean work | = IRQ periods |
+|---|---|---|---|---|
+| 3 (gate ticks left over) | 8 | 226 | 15,225 | 2.85 |
+| 4 | 521 | 247 | 14,298 | 2.68 |
+| 5 | 30 | 432 | 24,294 | 4.55 |
+| 6 | 22 | 533 | 31,205 | 5.84 |
+| 7 | 1 | 544 | 32,429 | 6.07 |
+
+The overruns **are** the CPU time and nothing else: below 4 periods of work
+the gate rules and the pass takes 4 IRQs; above it, the pass takes as many
+IRQs as the work.
+
+**Where it is charged.** `app_loop.c`'s `cpu_fits[]`, `cpu_charge()` and
+`cpu_charge_cycles()`; `cpu_charge()` spends IRQ periods by calling
+`machine_tick()`, i.e. by letting the machine's own clock run, so
+everything (sound tempo, the EAROM machine, the fps lock) stays consistent.
+
+- `sd_wait_vghalt()` — the pass's *first* hardware wait — looks the fit up
+  from `(ATRACT, ATSTG)` and charges `pre`.
+- `sd_hw_list_done()` — the new seam call at `L410D`, right after
+  `vg_add_halt()` in `mainline.c` — is where the build's cost is first
+  *known* (`VGLIST`/`EAC2` gives the length), so it charges
+  `base + per_byte * bytes - pre`.
+
+An "armed" flag keeps this to Start2 passes: `selftest.c` also calls
+`sd_wait_vghalt()` (from `$85A1` and St2), loops that build no list and
+have no fit, and only `sd_hw_list_done()` arms the flag. Consequence,
+recorded: the first pass after a boot is uncharged (one pass), and the
+first self-test HALT wait after leaving the game loop consumes a stale arm
+worth ~0.35 IRQ, once.
+
+**The probes are untouched by all of this.** They implement their own
+`sd_hw_*` seam and replay the oracle's recorded IRQ schedule, so
+`sd_hw_list_done()` is a no-op in `tests/probe_attract.c` and
+`tests/probe_selftest.c` and no probe ever calls the charge or the fps
+lock. Verified byte-for-byte: `probe_attract 600` still 33/34 with the
+same 35 bytes on frame 576, `probe_selftest` still 122/122, 57/57, 77/77,
+every counter line identical to the run before the model went in.
+
+### Cadence after the model: the port against the oracle
+
+Headless (`tests\sd_selftest.exe`, synthetic clock — the model's own rate
+with the host taken out of it), 900 attract frames from boot:
+
+| | before the model | after | the oracle, same 900 frames |
+|---|---|---|---|
+| attract, 900 frames | 61.2 fps (14.96-17.65 ms) | **55.0 fps** (12.19-28.44 ms) | 4.450 IRQs/pass = **55.3 fps** |
+| in a game, 142 frames | 60.5 fps (16.54 ms avg) | **60.5 fps** (16.54 ms avg) | 4.00 IRQs/pass = 61.5 Hz |
+
+0.5% from the oracle on attract, and play unchanged — which is the right
+answer, not a lucky one: the oracle's `play` scenario takes **exactly 4
+IRQs on all 1368 in-game frames** (STATUS.md), and the fit says a play pass
+costs 1.66-3.13 IRQ periods, i.e. never enough to overrun the gate. The
+model only bites where the ROM's own frames bite.
+
+Live window (`sd_win.log`, `[main] fps_lock=62.5`, so every hardware step
+is scaled by 62.5/61.523 = 1.0159 — 4 IRQs = 62.5 Hz, 5 = 50.0, 6 = 41.7):
+
+    62.5 fps  frame 16.00 ms (min 15.55 max 16.49)  avg draw 11.38 ms  303 segs  1638 list bytes
+    62.5 fps  frame 16.00 ms (min 15.89 max 16.12)  avg draw 11.46 ms  303 segs  1638 list bytes
+    59.5 fps  frame 16.80 ms (min 15.85 max 24.06)  avg draw 15.38 ms  330 segs  2626 list bytes
+    42.5 fps  frame 23.54 ms (min 19.99 max 28.00)  avg draw 17.19 ms  544 segs  2960 list bytes
+    41.7 fps  frame 24.00 ms (min 19.98 max 28.08)  avg draw 17.56 ms  558 segs  3110 list bytes
+    42.5 fps  frame 23.53 ms (min 19.88 max 27.97)  avg draw 14.77 ms  540 segs  2674 list bytes
+    45.0 fps  frame 22.22 ms (min 19.87 max 24.13)  avg draw 14.22 ms  513 segs  2516 list bytes
+    48.2 fps  frame 20.74 ms (min 15.98 max 24.13)  avg draw 14.04 ms  485 segs  2616 list bytes
+    53.6 fps  frame 18.66 ms (min 15.90 max 24.07)  avg draw 14.29 ms  478 segs  2524 list bytes
+    62.0 fps  frame 16.13 ms (min 12.07 max 20.25)  avg draw 12.08 ms  443 segs  2252 list bytes
+    62.5 fps  frame 16.00 ms (min 15.87 max 16.11)  avg draw 12.19 ms  432 segs  2252 list bytes
+
+The heavy attract screen now sits on **41.7 fps = exactly the 6-IRQ step**,
+the light ones on **62.5 = the 4-IRQ step**, and the intermediate
+one-second averages (45.0, 48.2, 53.6) are mixtures of 4-, 5- and 6-IRQ
+passes — the same three steps, in the same proportions, that the oracle
+takes ({4: 630, 5: 132, 6: 130, 7: 5} over the first 900 attract frames).
+Before the model the same screens read 61.5-58.9 fps throughout: the AVG
+draw time alone never took them below the gate by much, and the CPU was
+free. (The "list bytes" in the status line is the AVG's *word* count times
+two — vector-ROM subroutine words included — not the mainline's own list
+length that `per_byte` multiplies; the two are different measures of the
+same frame.)
 
 ### Power-on is fast-forwarded
 
@@ -490,8 +626,18 @@ clean" status for this known 33/34 baseline.)
   run, and measuring the delivered frame rate is exactly what the pacing
   model had to be checked against. No contract change, no behaviour change
   to the game.
-- **`sd_hw.h`** — untouched. The seam was already the right shape.
-- No game module, `tools/oracle.py` or `tests/ref/*` file was touched.
+- **`sd_hw.h`** — was untouched when this file was first written; the
+  CPU-time model (2026-09-13) added one call, `sd_hw_list_done()`, a timing
+  sync point declared beside `sd_hw_irq_mark()` and documented there.
+- **`mainline.c`** — one line for the same model: `sd_hw_list_done()` after
+  `vg_add_halt()` at `L410D`. No ROM instruction, no state change.
+- **`tests/probe_attract.c`, `tests/probe_selftest.c`** — the no-op
+  implementation of that call, so the probes keep replaying only the
+  oracle's recorded schedule.
+- **`tools/prof_fit.py`, `tools/prof_pass.py`** — new; observers over the
+  oracle that measured `cpu_fits[]`. They write no reference bytes.
+- No game module other than the one `mainline.c` line, no `tools/oracle.py`
+  change and no `tests/ref*/` file was touched for the pacing model.
 
 ---
 

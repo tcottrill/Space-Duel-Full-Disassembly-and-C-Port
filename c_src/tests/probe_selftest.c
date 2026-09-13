@@ -251,6 +251,11 @@ void sd_wait_3khz(uint8_t n)
     if (booted) replay_to_next_vggo();
 }
 
+/* The pass's list is complete.  A no-op here: the probe replays the
+ * oracle's recorded IRQ schedule and must never spend machine time of its
+ * own (app_loop.c charges the 6502's own pass time there). */
+void sd_hw_list_done(void) {}
+
 /* The CPU restarts at Poweron; the counters the oracle keeps outside the
  * CPU (frame, irq_count) run on.  The IRQs the oracle serviced between
  * this pass's VGGO and the restart hit RAM the restart then wiped, so they

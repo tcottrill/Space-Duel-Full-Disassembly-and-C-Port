@@ -55,6 +55,14 @@ void sd_wait_frame_gate(void);
 /* The CPU is spinning in some other hardware poll loop (e.g. the $80BB
  * EAROM-read wait): advance machine time by one IRQ tick. */
 void sd_hw_idle(void);
+/* L410D `JSR AddHaltToVector` has returned: the display list this Start2
+ * pass built is complete, and VGLIST/EAC2 is its end.  A TIMING sync point,
+ * not a hardware register - it is where the playable build knows how much
+ * 6502 time the pass cost (app_loop.c's cpu_fits[], measured by
+ * tools/prof_fit.py) and charges it, so a heavy list overruns the frame
+ * gate exactly as it did on the board.  The probes replay the oracle's
+ * recorded schedule instead and make it a no-op. */
+void sd_hw_list_done(void);
 /* The self-test's frame timer, $8592: n times { BIT HALT / BPL (wait for
  * the 3 kHz bit HIGH), BIT HALT / BMI (wait for it LOW) }.  Returns at the
  * falling edge that ends the n-th period; IRQs are serviced throughout. */

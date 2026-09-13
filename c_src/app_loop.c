@@ -580,6 +580,101 @@ static void machine_wait_until(double until)
  * wait): let one IRQ tick's worth of machine time pass. */
 void sd_hw_idle(void) { machine_tick(); }
 
+/* ---- the 6502's own time -------------------------------------------------
+ * A translated Start2 pass costs microseconds, but on the board it is real
+ * CPU time: Gtoptn and the self-test test before the AVG wait ($401F), then
+ * DoLowOnesEvery, the frame gate, the buffer swap and everything the pass
+ * builds up to `L410D JSR AddHaltToVector` - two to six IRQ periods.  With
+ * no model of that the port could not reproduce the ROM's own overrun
+ * frames: the oracle's 600-frame attract run takes 4 IRQs on 556 passes but
+ * 5, 6 or 7 on 43 of them, and the port took 4 every time.  (Space Duel is
+ * milder than Gravitar, whose port ran 2-5x too fast before this was
+ * modelled, because Space Duel's mainline strobes the VG itself and its
+ * $33 gate already paces the common case.)
+ *
+ * THE COSTS BELOW ARE MEASURED, NOT INVENTED.  tools/prof_fit.py, an
+ * observer over the oracle (the hardware model itself unchanged), reports
+ * per pass the mainline's own cycles - everything but the two hardware
+ * waits ($401F BIT HALT / $4027 LSR $33) and the IRQ handler - against the
+ * display-list bytes the pass built, split PRE/POST at the first wait.
+ * Fitted per (STATE, DSTATE) = (ATRACT $35, ATSTG $DC), Space Duel's
+ * equivalent of Gravitar's pair, over three scenarios on 2026-09-13:
+ * attract 3000 frames, play 3000 frames, selftest 440 frames - 6,046
+ * passes.  The list length explains most of the spread in every state (the
+ * residual sd is 1.7-1.9 k cycles against a 3.0-6.5 k spread about the
+ * plain mean), so none of them takes Gravitar's per-state-mean treatment.
+ *
+ * W cycles of mainline work occupy W / (6144 - handler) IRQ periods of
+ * machine time, because the IRQ handler steals `handler` cycles of every
+ * 6144-cycle period.  Fractions carry over, so a 4.01 averages 4.01.
+ *
+ * That the model is the right one is checkable: grouped by the IRQs the
+ * oracle actually spent on the pass, attract's measured work per pass is
+ * 2.68 IRQ periods on the 521 four-IRQ passes, 4.55 on the 30 five-IRQ
+ * ones, 5.84 on the 22 six-IRQ ones and 6.07 on the single seven-IRQ one -
+ * the overruns ARE the CPU time, and nothing else. */
+typedef struct {
+    uint8_t state, dstate;
+    double  base, per_byte;         /* mainline cycles per pass            */
+    double  pre;                    /* of which, before the AVG wait       */
+    double  handler;                /* IRQ handler cycles per IRQ          */
+} cpu_fit;
+static const cpu_fit cpu_fits[] = {
+    /* ATRACT ATSTG   base  per_byte    pre  handler  (prof_fit, 2026-09-13) */
+    { 0x00, 0x00,   5047.0, 48.28,  1877.0, 798.0 }, /* attract, no special  695 passes sd 1719, 190-504 bytes = 2.66-5.50 IRQs */
+    { 0x00, 0x80,   1180.0, 56.56,  1864.0, 800.0 }, /* attract, special    2482 passes sd 1855, 226-574 bytes = 2.61-6.30 IRQs */
+    { 0x80, 0x00,   2207.0, 51.35,  1843.0, 490.0 }, /* a game running      2868 passes sd 1853, 140-302 bytes = 1.66-3.13 IRQs */
+    { 0x80, 0x80,  23042.0,  0.0,    307.0, 792.0 }, /* the first pass of a game: 1 pass, 114 bytes, 4.31 IRQs */
+};
+#define SD_IRQ_CYCLES 6144.0
+
+static double cpu_owed;                  /* fractional IRQ periods carried */
+static const cpu_fit *cur_fit;           /* this pass's fit, or NULL       */
+static int    cpu_pass_armed;            /* a Start2 pass is about to open */
+
+static const cpu_fit *fit_lookup(uint8_t state, uint8_t dstate)
+{
+    size_t i;
+    for (i = 0; i < sizeof cpu_fits / sizeof *cpu_fits; i++)
+        if (cpu_fits[i].state == state && cpu_fits[i].dstate == dstate)
+            return &cpu_fits[i];
+    return NULL;                         /* charge nothing for an unfitted
+                                          * state rather than invent one   */
+}
+
+/* Spend `irqs` IRQ periods of machine time, as the 6502 would have. */
+static void cpu_charge(double irqs)
+{
+    cpu_owed += irqs;
+    while (cpu_owed >= 1.0) {
+        machine_tick();
+        cpu_owed -= 1.0;
+    }
+}
+
+/* Spend `cycles` of MAINLINE time under a fit: the IRQ handler steals its
+ * share of every period, so the wall time is longer by that ratio. */
+static void cpu_charge_cycles(const cpu_fit *f, double cycles)
+{
+    if (cycles > 0.0)
+        cpu_charge(cycles / (SD_IRQ_CYCLES - f->handler));
+}
+
+/* L410D `JSR AddHaltToVector` has returned: the list this pass built is
+ * complete and VGLIST/EAC2 gives its length ($2002/$2402 + n).  This is
+ * Space Duel's Namony - under a fit it is the first moment the build's cost
+ * is known, so the POST half is charged here, while the buffer the AVG is
+ * drawing is still the one strobed at $4056. */
+void sd_hw_list_done(void)
+{
+    if (cur_fit) {
+        double bytes = (double)(((((unsigned)EAC2 << 8) | VGLIST) & 0x03FFu)) - 2.0;
+        cpu_charge_cycles(cur_fit, cur_fit->base + cur_fit->per_byte * bytes
+                                   - cur_fit->pre);
+    }
+    cpu_pass_armed = 1;         /* the next $401F wait opens a Start2 pass */
+}
+
 /* IN0 d6 - VG HALT.  The AVG holds it LOW while it is drawing; the mainline
  * blocks at $401F until it goes high.  The busy window is the cycle-true
  * draw time of the list we last started (avg_frame_time_ms(), the
@@ -623,8 +718,26 @@ void sd_wait_frame_gate(void)
  * drawing.  Together with the gate wait above this makes the frame period
  * max(16.26 ms, AVG draw time) without either number being written down:
  * heavy display lists slow the game down exactly as they did on the
- * hardware (DESIGN.md "Timing model"). */
-void sd_wait_vghalt(void) { machine_wait_until(vg_busy_until); }
+ * hardware (DESIGN.md "Timing model").
+ *
+ * It is also the pass's FIRST hardware wait, so the PRE half of the pass's
+ * CPU time (Start2's Gtoptn and the self-test test, which on the board run
+ * before the 6502 ever looks at HALT) is charged here.  The arm flag keeps
+ * that to Start2 passes: selftest.c calls this from $85A1 and St2, loops
+ * with no display-list build and no fit, and only sd_hw_list_done() arms
+ * it.  The first pass after a boot is therefore uncharged - one pass. */
+void sd_wait_vghalt(void)
+{
+    if (cpu_pass_armed) {
+        cpu_pass_armed = 0;
+        cur_fit = fit_lookup(ATRACT, ATSTG);
+        if (cur_fit)
+            cpu_charge_cycles(cur_fit, cur_fit->pre);
+    } else {
+        cur_fit = NULL;
+    }
+    machine_wait_until(vg_busy_until);
+}
 
 /* $8592 BIT HALT / BPL, BIT HALT / BMI, n times - the self-test's frame
  * timer, 25 periods of the 3 kHz clock (~8.3 ms).  The clock is a pure
