@@ -580,7 +580,7 @@ static void machine_wait_until(double until)
  * wait): let one IRQ tick's worth of machine time pass. */
 void sd_hw_idle(void) { machine_tick(); }
 
-/* ---- the 6502's own time -------------------------------------------------
+/* ---- vector timing correction: the 6502's own time --------------------
  * A translated Start2 pass costs microseconds, but on the board it is real
  * CPU time: Gtoptn and the self-test test before the AVG wait ($401F), then
  * DoLowOnesEvery, the frame gate, the buffer swap and everything the pass

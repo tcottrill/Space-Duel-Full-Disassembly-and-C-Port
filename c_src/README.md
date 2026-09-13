@@ -178,7 +178,7 @@ directory at the repository root) or the 64K image that
 | `tests/avg_dump.c` | links only the AVG walker; dumps a display list |
 | `tests/color_wheel.c` | a beam-renderer diagnostic, with no ROM and no display list |
 | `tests/ref*`, `tests/sched/` | the oracle's reference dumps and the interrupt-mark schedule |
-| `tools/` | `oracle.py`, `gen_state.py`, `gen_vecrom.py`, `gen_progrom.py`, the per-module `gen_*_data.py`, `avg_check.py`, and the two pacing profilers `prof_pass.py` / `prof_fit.py` — observers over the oracle that measure what a mainline pass costs the 6502 |
+| `tools/` | `oracle.py`, `gen_state.py`, `gen_vecrom.py`, `gen_progrom.py`, the per-module `gen_*_data.py`, `avg_check.py`, and the two vector-timing-correction profilers `prof_pass.py` / `prof_fit.py` — observers over the oracle that measure what a mainline pass costs the 6502 |
 | `CONVENTIONS.md` | **read this before adding code** |
 | `DESIGN.md` | the architecture and the verification gates |
 | `FINDINGS.md` | what the port proved, and what it turned up that the disassembly alone could not |
@@ -193,7 +193,7 @@ directory at the repository root) or the 64K image that
 | `NOTES_objects.md` | the object table, the physics and the enemies |
 | `NOTES_oracle.md` | the oracle's contract: what the port must reproduce bit for bit, and the rules the reference bytes were captured under |
 | `NOTES_platform.md` | the platform layer as first made |
-| `NOTES_playable.md` | the window build: the hardware seam, the pacing model, and the numbers it delivers |
+| `NOTES_playable.md` | the window build: the hardware seam, the pacing model (vector timing correction: the 6502's own time per pass, charged on top of the AVG draw time), and the numbers it delivers |
 | `NOTES_score.md` | scoring, the high-score table and the name display |
 | `NOTES_selftest.md` | `AS2TST`: the power-on diagnostics, the bookkeeping screens and the signature-analysis mode |
 | `NOTES_soundcoins.md` | `AS2SAC`/`AS2POK`, the POKEY script engine, and `COIN65` |

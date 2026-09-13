@@ -190,7 +190,7 @@ the 6502 sat in them with interrupts enabled:
 Nothing writes down a frame rate. The period **emerges** as
 `max(frame gate, AVG draw time, the 6502's own time for the pass)` —
 DESIGN.md's rule, fallen out of the two waits plus the CPU-time model added
-on 2026-09-13 (the third term; see "The 6502's own time" below).
+on 2026-09-13 (the third term; see "Vector timing correction" below).
 `sd_hw_irq_mark()` is a **no-op** here, with the reason in the code:
 it exists so a *probe* can replay the oracle's recorded `irq_count` at four
 exact ROM locations; on a cabinet real elapsed time already spreads a
@@ -232,7 +232,7 @@ NOTES_avg.md already explains why (it is a declared driver constant). Play
 lists here reach ~2.8 kB and ~17 ms — they *do* cross the gate, but not by
 enough to halve the rate.
 
-### The 6502's own time (2026-09-13, backported from the Gravitar port)
+### Vector timing correction: the 6502's own time (2026-09-13, backported from the Gravitar port)
 
 The two waits above are the *hardware's* time. The third term is the
 **CPU's**: on the board a Start2 pass is real 6502 work — `Gtoptn` and the
