@@ -155,8 +155,8 @@ static const rgb_t avg_rgb[8] = {
  *
  * [vector] phosphor_ms in sd_win.ini is the decay time constant: a
  * frame is drawn at exp(-age_ms / phosphor_ms) of the intensity the AVG
- * gave it (the color stays; only intensity decays). 0 turns the path
- * off (one frame, full brightness). */
+ * gave it (the color stays; only intensity decays). 0, the default,
+ * turns the path off (one frame, full brightness). */
 #define PH_FRAMES  8            /* history depth                        */
 #define PH_SEGS    4096         /* segments captured per frame          */
 #define PH_FLOOR   0.02         /* drop a frame once it fades below this */
@@ -189,6 +189,7 @@ static void msg_box(const char* title, const char* message)
 }
 
 static void set_window_title(const char* title) { SetWindowTextA(hWnd, title); }
+
 
 /* ------------------------------------------------------------------ */
 /* DPI awareness                                                       */
@@ -507,7 +508,7 @@ int plat_init(void)
 
     /* Phosphor decay time constant, ms (see the block above). A tuning
      * knob, defaulted short. 0 = off. */
-    ph_tau = (double)get_config_float("vector", "phosphor_ms", 12.0f);
+    ph_tau = (double)get_config_float("vector", "phosphor_ms", 0.0f);
     set_config_float("vector", "phosphor_ms", (float)ph_tau);
 
     if (FAILED(RawInput_Initialize(hWnd))) {
@@ -576,6 +577,29 @@ int plat_init(void)
         sd_app_set_fps_lock((double)fps_lock);
     }
 
+    /* Dropped frames (app_loop.c, "dropped frames: the cabinet's missed
+     * frame").  [main] dropped_frame_irqs: a pass that spends this many
+     * IRQ periods - 7, the ROM's own overrun passes, about seven per
+     * attract sequence - shows a blank with nothing drawn from the moment
+     * the AVG finishes its list to the next VGGO (~11 ms, the tube's own
+     * dark time); 0 = never.  [main] dropped_frame_hold_ms keeps the blank
+     * up that much longer, delaying the next frame; 0 (default) = the
+     * tube's own timing. */
+    {
+        int   irqs = get_config_int("main", "dropped_frame_irqs", 7);
+        float hold = get_config_float("main", "dropped_frame_hold_ms", 0.0f);
+        set_config_int("main", "dropped_frame_irqs", irqs);
+        set_config_float("main", "dropped_frame_hold_ms", hold);
+        if (irqs > 0)
+            LOG_INFO("dropped frames: a %d-IRQ pass shows a blank (%s) from the "
+                     "end of its draw to the next VGGO%s%.1f ms",
+                     irqs, ph_tau > 0.0 ? "the fading afterglow" : "black",
+                     hold > 0.0f ? " plus " : ", hold ", hold > 0.0f ? hold : 0.0f);
+        else
+            LOG_INFO("dropped frames: off (dropped_frame_irqs=0)");
+        sd_app_set_dropped_frame(irqs, (double)hold);
+    }
+
     /* The AVG screen window for this board: x 0..520, y 0..395, y up
      * (AAE drv_spacduel AAE_DRIVER_SCREEN), squeezed into the 4:3
      * design rect. */
@@ -641,13 +665,13 @@ void plat_video_line(float x0, float y0, float x1, float y1, int color, int lum)
 /* Replay the phosphor history oldest-first, each frame's intensity
  * scaled by its own decay, then draw the batch additively (color mode:
  * overlapping beams sum, corner joins fill via GL_MAX - see
- * vector_draw.c). */
-void plat_video_present(void)
+ * vector_draw.c).  `newest_full`: the newest frame is being presented
+ * now, at full intensity; otherwise it decays by its age like the rest
+ * (a dropped frame's blank). */
+static void ph_replay(int newest_full)
 {
     double now = plat_now_ms();
     int i;
-
-    ph_buf[ph_cur].t = now;
 
     beam_clear();
     for (i = 0; i < PH_FRAMES; i++) {
@@ -657,7 +681,7 @@ void plat_video_present(void)
         int k;
 
         if (!f->used) continue;
-        if (f == &ph_buf[ph_cur]) fac = 1.0;
+        if (f == &ph_buf[ph_cur] && newest_full) fac = 1.0;
         else if (ph_tau <= 0.0)   continue;  /* phosphor off */
         else {
             fac = exp(-(now - f->t) / ph_tau);
@@ -670,8 +694,25 @@ void plat_video_present(void)
             beam_add_line(s->x0, s->y0, s->x1, s->y1, intens, avg_rgb[s->color]);
         }
     }
-
     beam_draw_all(beam_proj);
+}
+
+void plat_video_present(void)
+{
+    ph_buf[ph_cur].t = plat_now_ms();
+    ph_replay(1);
+    glSwap();
+}
+
+/* A dropped frame: the tube is dark, so NOTHING new is drawn.  With the
+ * phosphor off (the default) that is a black frame; with it on, the
+ * history keeps fading - the newest frame included, from the moment it
+ * was presented - exactly as the tube would. */
+void plat_video_blank(void)
+{
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    if (ph_tau > 0.0) ph_replay(0);
     glSwap();
 }
 

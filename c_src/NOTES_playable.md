@@ -366,6 +366,77 @@ two — vector-ROM subroutine words included — not the mainline's own list
 length that `per_byte` multiplies; the two are different measures of the
 same frame.)
 
+### Dropped frames: the cabinet's missed frame (2026-09-13)
+
+A vector monitor is lit only while the AVG draws. Through the attract demo
+a pass overruns the gate on most frames (5-6 IRQs, 20-24 ms) and the
+phosphor carries the picture across those gaps; but **about seven times
+per attract sequence a pass runs to 7 IRQ periods, 28 ms**, and that one
+the user sees on the real machine as a single black frame. A window that
+presents on every VGGO and then holds the frame never shows it.
+
+**The event is exact:** a pass on which the machine spends
+`dropped_frame_irqs` (7) IRQ periods between one VGGO and the next,
+counted from `g.irq_count`. Not a prediction, not a time threshold: 5- and
+6-IRQ passes (1476 and 516 of a 3600-frame attract) can never fire it.
+The 6502 time model above is what makes the port produce these passes at
+all; before it every pass took 4.
+
+Measured, headless (`tests\sd_selftest.exe 3600`), all on the machine's
+own clock:
+
+    attract  3600 frames  dropped frames 7   (frames 607, 635, 643, 646,
+                                              649, 653, 670 - the demo's
+                                              opening seconds)
+    coin / game / bookkeeping / diagnostics   dropped frames 0
+
+The oracle's own schedule agrees: its single 7-IRQ pass in the 600-frame
+capture is frame 599, and the longer 1500-frame run recorded on 2026-09-03
+had six.
+
+**Showing it, on the tube's own timing.** The blank goes up when the AVG
+finishes drawing the pass's list (`vg_busy_until`, ~17 ms in) and comes
+down at the next VGGO (~28 ms): 11 ms of dark, the board's own. That
+needs the pass's length *before* it is spent, and `sd_hw_list_done()` has
+it: nothing of the pass has been charged yet (the build is instant), and
+its ticks are `floor(owed + this build's cost + the next pass's pre)` plus
+whatever the gate adds, never less - so `>= 7` there is certain. Checked
+headless: all 7 events predicted, no false positives (the experiment
+printed predicted against actual for every pass). `presenter_poll()`,
+called first thing in `machine_idle()`, shows it at the scheduled moment
+with `plat_video_blank()` - **nothing new drawn: black with the phosphor
+off (the default), the fading history with it on**, which is what the
+tube does. A fallback in the same poll (six IRQs already run since the
+VGGO and the machine waiting for a seventh) covers a pass with no fit; it
+can only show ~4 ms of black, but it keeps the count honest.
+
+`dropped_frame_hold_ms` keeps the blank up past the next VGGO, delaying
+that frame's present (a frame superseded while held is "held" in the
+status line). It is 0 by default: the first live look used a full 60 Hz
+refresh of hold (16.7 ms, starting at the 7th tick rather than at the end
+of the draw) and the user read it as "a little too much black".
+
+**Only the host present moves**: the machine clock, the IRQ schedule, the
+`$33` gate, the AVG busy window and the probes (their own seam) are
+untouched, and the self-test checks that the blanks presented and the
+VGGO-side pass counts agree one-for-one.
+
+Two things tried first and recorded so they are not tried again. A
+**threshold on the dark gap** (the rolled-back 2026-09-03 attempt, 8 ms)
+cannot isolate the event: the gap is 4-12 ms on *every* demo frame and
+never larger, and that attempt also re-presented on top of the frame's own
+present with each blank blocking on vsync, which cascaded. A **60 Hz
+raster presenter** (blank every refresh no VGGO reached, the way AAE shows
+a vector game) was built and measured on 2026-09-13: 566 blanks per
+3600-frame attract, ~20 per second through the demo, because the demo
+really does run at 41.7-50 fps. The user's count from the cabinet is about
+seven per attract, so the eye and the phosphor, not a raster tick, decide
+what counts as a missed frame; the pass-length event matches that count.
+
+Status line: `N dropped (M held)` per second. Ini: `dropped_frame_irqs`
+(0 = off; 6 blanks every heavy demo frame, for comparison) and
+`dropped_frame_hold_ms`.
+
 ### Power-on is fast-forwarded
 
 `StartThingsRunning` burns `$61` gate ticks (~1.58 s of hardware time) as
