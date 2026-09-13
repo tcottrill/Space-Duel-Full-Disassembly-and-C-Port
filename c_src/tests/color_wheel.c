@@ -157,3 +157,8 @@ void sd_app_set_dropped_frame(int irqs, double hold_ms)
     (void)irqs; (void)hold_ms;  /* no dropped frames here; the wheel
                                  * presents itself */
 }
+
+void sd_app_set_refresh(double hz)
+{
+    (void)hz;
+}

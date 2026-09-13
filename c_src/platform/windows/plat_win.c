@@ -190,6 +190,25 @@ static void msg_box(const char* title, const char* message)
 
 static void set_window_title(const char* title) { SetWindowTextA(hWnd, title); }
 
+/* The current mode's refresh rate of the monitor the window is on, or 0
+ * if Windows will not say (dmDisplayFrequency 0 or 1 = "hardware
+ * default").  An integer: a 59.94 Hz panel reports 59 or 60. */
+static float monitor_refresh_hz(HWND w)
+{
+    MONITORINFOEXW mi;
+    DEVMODEW dm;
+    HMONITOR m = MonitorFromWindow(w, MONITOR_DEFAULTTOPRIMARY);
+
+    memset(&mi, 0, sizeof mi);
+    mi.cbSize = sizeof mi;
+    if (!GetMonitorInfoW(m, (MONITORINFO*)&mi)) return 0.0f;
+    memset(&dm, 0, sizeof dm);
+    dm.dmSize = sizeof dm;
+    if (!EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm))
+        return 0.0f;
+    return dm.dmDisplayFrequency > 1 ? (float)dm.dmDisplayFrequency : 0.0f;
+}
+
 
 /* ------------------------------------------------------------------ */
 /* DPI awareness                                                       */
@@ -598,6 +617,32 @@ int plat_init(void)
         else
             LOG_INFO("dropped frames: off (dropped_frame_irqs=0)");
         sd_app_set_dropped_frame(irqs, (double)hold);
+    }
+
+    /* Test mode's steady flicker (app_loop.c, "test mode: the steady
+     * flicker of a 44 fps screen").  While the CPU is in a test loop the
+     * picture is presented at the panel's rate and a refresh no VGGO
+     * reached is blank.  [main] refresh_hz: 0 (default) = ask Windows for
+     * the current mode of the monitor the window is on; < 0 = off. */
+    {
+        float hz = get_config_float("main", "refresh_hz", 0.0f);
+        const char* from = "the ini";
+        set_config_float("main", "refresh_hz", hz);
+        if (hz == 0.0f) {
+            hz = monitor_refresh_hz(hWnd);
+            from = hz > 0.0f ? "the display" : "the 60 Hz fallback";
+            if (hz <= 0.0f) hz = 60.0f;
+        }
+        if (hz > 0.0f && (hz < 20.0f || hz > 500.0f)) {
+            hz = 60.0f;
+            from = "the 60 Hz fallback (refresh_hz out of range)";
+        }
+        if (hz > 0.0f)
+            LOG_INFO("test mode: presented at %.2f Hz from %s, a refresh with "
+                     "no VGGO is blank", hz, from);
+        else
+            LOG_INFO("test mode: presented on every VGGO (refresh_hz < 0)");
+        sd_app_set_refresh((double)hz);
     }
 
     /* The AVG screen window for this board: x 0..520, y 0..395, y up

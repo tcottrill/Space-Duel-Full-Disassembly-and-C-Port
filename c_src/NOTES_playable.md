@@ -437,6 +437,40 @@ Status line: `N dropped (M held)` per second. Ini: `dropped_frame_irqs`
 (0 = off; 6 blanks every heavy demo frame, for comparison) and
 `dropped_frame_hold_ms`.
 
+**Test mode: the steady flicker of a 44 fps screen.** The bookkeeping
+screen's list takes 22.65 ms to draw and the ROM waits on HALT, so it
+runs at exactly 44.15 fps - the user's "44" from the cabinet, a neat
+check on the AVG timing - with the beam busy the whole period: no dark
+gap, so the dropped-frame event can never fire, and a window holding each
+frame shows a rock-steady picture where the tube shows a rock-steady
+flicker (every spot re-lit once per 22.65 ms, fading in between). The
+demo's 6-IRQ stretches re-light each spot every 24 ms, the same thing
+physically, and the eye passes them: large bright static text shows
+flicker, dim moving objects hide it, and (the user's own rule) a short
+dip to 41 fps is hard to see where a long stretch is not. No single
+physical rule separates the two, so this is keyed on what the ROM is
+doing: **while the CPU is parked in a test loop** (`sd_cpu_loop() !=
+SD_LOOP_START2`, the bookkeeping screen and the power-on diagnostics) the
+picture is presented the way a raster display or AAE shows a vector game
+- at the panel's refresh rate (`[main] refresh_hz`, the display's current
+mode by default), each tick showing the newest VGGO if one arrived since
+the previous tick and **nothing** otherwise. An approximation, said so
+("I hate to fake it"), kept out of the game and attract where it would
+blank ~20 times a second through the demo.
+
+Headless (`sd_selftest.exe 3600`, a 60 Hz panel on the synthetic clock):
+
+    bookkeeping (F2)   30 frames at 44.15 fps   test-mode blanks 10  (~15/s)
+    diagnostics        30 frames at 120 fps     test-mode blanks 0
+    attract / game                              test-mode blanks 0
+
+and the summary checks that every blank present is either a dropped-frame
+event or a test-mode blank. One trap, recorded: the synthetic clock jumps
+a whole HALT wait in one step, so `machine_idle()` clips the jump at the
+next refresh tick in test mode - otherwise every tick the presenter saw
+had a fresh frame and the headless count was 0. Status line: `N blank`
+per second.
+
 ### Power-on is fast-forwarded
 
 `StartThingsRunning` burns `$61` gate ticks (~1.58 s of hardware time) as
