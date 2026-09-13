@@ -32,6 +32,15 @@ CPU
     decimal-adjusted.  The IRQ handler ($8672) does SED arithmetic on the
     EAROM operation counters, so this matters.
   * JMP ($xxFF) reproduces the page-wrap bug (high byte fetched from $xx00).
+  * INTERRUPT POLLING IS MAME's (src/devices/cpu/m6502/om6502.lst): the
+    line is polled at the end of every instruction with the I flag AS IT
+    STOOD BEFORE that instruction when the instruction is CLI, SEI or PLP
+    ("prefetch(); P &= ~F_I; // Do *not* move it before the prefetch"),
+    and with the new I after everything else, RTI included.  So an IRQ
+    lands one instruction late after CLI, and a pending IRQ is still taken
+    right after SEI.  (Backported from the Gravitar oracle, 2026-09-13; an
+    earlier version polled with the current I and took the interrupt on the
+    CLI itself - see NOTES_oracle.md section 7 for the before/after.)
   * CYCLE COUNTS ARE APPROXIMATE: base cycles per opcode from the standard
     table, +1 for a taken branch, NO page-cross penalties.  All timing below
     is defined in terms of these approximate cycles; the C port replays the
@@ -190,6 +199,7 @@ class Oracle:
         self.sp = 0xFD
         self.n = self.z = self.c = self.v = 0
         self.i = 1
+        self.i_poll = 1                      # the I the IRQ poll sees (MAME)
         self.d = 0
         self.cyc = 0
         # IRQ
@@ -448,11 +458,12 @@ class Oracle:
             self.irq_line = True
             while self.cyc >= self.next_irq:
                 self.next_irq += IRQ_PERIOD
-        if self.irq_line and not self.i:
+        if self.irq_line and not self.i_poll:
             self.push(self.pc >> 8)
             self.push(self.pc & 0xFF)
             self.push(self.flags(0))
             self.i = 1
+            self.i_poll = 1
             self.pc = self.rd16(0xFFFE)
             self.cyc += 7
             self.irq_count += 1
@@ -473,6 +484,7 @@ class Oracle:
             self.fatal("BRK at $%04X (not expected in this ROM)" % pc0)
         self.pc = (pc0 + 1) & 0xFFFF
         self.cyc += cy
+        i_before = self.i                     # for the CLI/SEI/PLP poll rule
 
         # effective address / operand
         rd, rd16 = self.rd, self.rd16
@@ -661,6 +673,9 @@ class Oracle:
             pass
         else:
             self.fatal("unhandled mnemonic %s" % m)
+        # MAME's poll rule (header, CPU): CLI/SEI/PLP are polled with the
+        # I they started with; everything else, RTI included, with the new I.
+        self.i_poll = i_before if m in ("CLI", "SEI", "PLP") else self.i
 
     def run(self):
         self.pc = self.rd16(0xFFFC)
@@ -1013,6 +1028,7 @@ def main():
             "lfsr": "17-bit, seed 0x1FFFF, 8 shifts/read of "
                     "s=((s<<1)|(((s>>16)^(s>>11))&1))&0x1FFFF, return s&0xFF",
             "cycles": "approximate: base table, +1 taken branch, no page penalties",
+            "irq_poll": "MAME m6502: CLI/SEI/PLP polled with the prior I, RTI with the new",
         },
         "frames_total": sim.frame,
         "error": err,

@@ -9,7 +9,8 @@
   "dip1008": 0,
   "dip1408": 0,
   "lfsr": "17-bit, seed 0x1FFFF, 8 shifts/read of s=((s<<1)|(((s>>16)^(s>>11))&1))&0x1FFFF, return s&0xFF",
-  "cycles": "approximate: base table, +1 taken branch, no page penalties"
+  "cycles": "approximate: base table, +1 taken branch, no page penalties",
+  "irq_poll": "MAME m6502: CLI/SEI/PLP polled with the prior I, RTI with the new"
  },
  "frames_total": 440,
  "error": null,

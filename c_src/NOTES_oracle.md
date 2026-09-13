@@ -161,3 +161,75 @@ Observed (and verified by AVG decode with `../disasm/avg.py` semantics):
 6. **LFSR read counting**: RANDOM was read via $100A *and* $140A ($4AD0);
    both step the single shared LFSR. Order/count of reads is part of the
    contract (section 1).
+
+## 7. The CLI/SEI/PLP interrupt-poll rule (backported 2026-09-13)
+
+Ported from the Gravitar oracle, which took it from MAME's 6502
+(`src/devices/cpu/m6502/om6502.lst`): the interrupt line is polled at the
+**end of every instruction**, and for `CLI`, `SEI` and `PLP` the poll uses
+the I flag **as it stood before the instruction** —
+
+    prefetch(); P &= ~F_I;   // Do *not* move it before the prefetch
+
+— while every other instruction, **`RTI` included**, is polled with the new
+I. Consequences: an IRQ pending when the ROM does `CLI` is taken one
+instruction *later*, and an IRQ pending at an `SEI` is still taken right
+after it.
+
+The oracle carries a second flag, `i_poll`, alongside `i`; the poll in
+`Oracle.step()` tests `i_poll`, and the last line of the instruction
+dispatch sets `i_poll = i_before if m in ("CLI","SEI","PLP") else self.i`.
+`ref_index.json`'s model block records the rule as `"irq_poll"`.
+
+### What it changed — before / after
+
+Over the whole 600-frame attract run the rule alters the poll outcome
+**twice**, once in each direction (measured with a scratch observer
+subclass that flags every step where `i_poll != i` with the line pending):
+
+| where | instruction | old rule | new rule |
+|---|---|---|---|
+| `StartThingsRunning` `$80AB` | `CLI` | interrupt taken on the CLI, return address `$80AC` pushed | CLI completes, `$80AC LDX #$60` runs, interrupt taken after it, return address **`$80AE`** pushed |
+| `Gtoptn` `$76DB` | `SEI` | pending interrupt suppressed, deferred to the next CLI | pending interrupt **still taken** right after the SEI |
+
+This is the Space Duel analogue of Gravitar's "`Poweron` pushed `$E8B4`
+instead of `$E8B2`". It does **not** move any reference byte: both events
+are a single instruction's worth of slip deep inside the boot, the pushed
+address is long overwritten by the time frame 1 is captured, and neither
+changes an IRQ *count*.
+
+**Every reference set was regenerated with the command it was recorded
+with** and diffed file-by-file against the committed one:
+
+    py c_src\tools\oracle.py attract       --frames  600 --outdir c_src\tests\ref
+    py c_src\tools\oracle.py play          --frames 1500 --capture-every 4 --outdir c_src\tests\ref_play
+    py c_src\tools\oracle.py selftest      --frames  440 --capture-every 4 <marks> --outdir c_src\tests\ref_selftest
+    py c_src\tools\oracle.py selftest_exit --frames  180 --capture-every 4 <marks> --outdir c_src\tests\ref_selftest_exit
+    py c_src\tools\oracle.py selftest_boot --frames  260 --capture-every 4 <marks> --outdir c_src\tests\ref_selftest_boot
+    <marks> = --irq-marks 0x40FB --irq-marks 0x4113 --irq-marks 0x40E5
+              --irq-marks 0x40D7 --irq-marks 0x8C24 --irq-marks 0x803F
+    py c_src\tools\oracle.py attract --frames 600 --irq-marks 0x40FB --irq-marks 0x4113 \
+        --irq-marks 0x40E5 --irq-marks 0x40D7 --outdir <scratch>   -> c_src\tests\sched\irq_marks.txt
+
+Result: **all 677 captured frames — 1,354 `.ram`/`.vram` files — byte-identical**, every
+`coverage_*.md`, `scenario.txt`, `irq_marks.txt` and `vggo_sched.txt`
+byte-identical (`tests/sched/irq_marks.txt` too), and the only changed
+bytes in the whole tree are the new `"irq_poll"` line in each
+`ref_index.json` model block. Console figures unchanged as well: attract
+2855 IRQs / 17,556,949 cycles / first VGGO at cycle 2,421,626 / IRQs at the
+first 16 frames 392..452 / distribution `{4: 556, 5: 20, 6: 22, 7: 1}`.
+
+No C change was forced. Probes before and after the rule:
+
+    tests\probe_attract.exe  600                       33/34, 35 mismatched bytes (frame 576)
+    tests\probe_selftest.exe 440 tests\ref_selftest    122/122  PROBE PASSED
+    tests\probe_selftest.exe 180 ..._exit               57/57   PROBE PASSED
+    tests\probe_selftest.exe 260 ..._boot               77/77   PROBE PASSED
+    tests\sd_selftest.exe                              SELFTEST: PASSED (0 failures)
+
+identical lines in both runs. The C port has **no** CLI-timing dependency
+of the kind Gravitar had to model with a seam call at the CLI: Space Duel's
+probe replays a recorded IRQ schedule whose counts the rule does not move,
+and the single deferred boot interrupt lands inside
+`StartThingsRunning`'s `$61`-tick warm-up wait, which the C port reproduces
+as a tick count rather than an instruction stream.
