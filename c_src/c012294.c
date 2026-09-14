@@ -29,6 +29,7 @@
  * rest of this file is under the project's licence (see LICENSE).
  */
 #include <string.h>
+#include <math.h>
 
 #include "c012294.h"
 
@@ -39,6 +40,8 @@ static void cycle_audio_step(ad_pokey *p, const uint32_t *borrows);
 static void cycle_audio_sample(ad_pokey *p);
 static int32_t cycle_audio_level(const ad_pokey *p);
 static void cycle_audio_integrate(ad_pokey *p, int32_t level, uint32_t halves);
+static void audio_queue_clear(ad_pokey *p);
+static void audio_playback_config(ad_pokey *p, double dc_hz, double gain);
 static void cycle_audio_noise_clock(ad_pokey *p, bool running);
 
 /* ------------------------------------------------------------------ */
@@ -68,6 +71,10 @@ static uint8_t g_rand9[511];
 static uint8_t g_rand17[131071];
 #endif
 static bool    g_tables_built = false;
+/* The DAC transfer curve, indexed by the summed channel weights (0..412,
+ * units of 0.02 V), PCM units, negative-going: the chip pulls its output
+ * DOWN from the pull-up as volume rises.  Built once with the polys. */
+static int16_t g_dac_curve[413];
 
 /* Fibonacci LFSR: each step folds bits 2 and (size-1) of the running
  * state through XNOR into a new bit shifted in at position 0; only the
@@ -164,10 +171,27 @@ static void chain_reset(ad_rng_chain *c)
     c->l9 = 0; c->l17 = 0xFF; c->swdelay = 0; c->nd = 0;
 }
 
+/* Avery Lee, Altirra Hardware Reference Appendix E.2:
+ * measured bit drops .12/.26/.56/1.12V. The exponential is a
+ * hand-fitted combined-channel approximation, not resistor values.
+ * https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf
+ * 4*(.12+.26+.56+1.12) = 8.24V, or 412 units of .02V. */
+static void dac_curve_init(void)
+{
+    for (int i = 0; i <= 412; ++i) {
+        double x = (double)i / 412.0;
+        double y = 2.171 * (x <= 0.14 ? x :
+            0.14 + (1.0 - exp(-2.85 * (x - 0.14))) / 2.85);
+        if (y > 1.0) y = 1.0; /* rounded fit overshoots by ~0.000026 */
+        g_dac_curve[i] = (int16_t)-(int32_t)(32767.0 * y + 0.5);
+    }
+}
+
 static void build_tables(void)
 {
     if (g_tables_built)
         return;
+    dac_curve_init();
     poly_init_4_5(g_poly4, 4);
     poly_init_4_5(g_poly5, 5);
 #ifdef AD_PROBE
@@ -458,7 +482,7 @@ static void fire_irq(ad_pokey *p, uint8_t mask)
 static bool    sdo_idle(const ad_pokey *p);
 static bool    sdo_line(const ad_pokey *p);
 static uint8_t skstat_read(const ad_pokey *p);
-static void    serial_step(ad_pokey *p, const uint32_t *borrows);
+static void    serial_step(ad_pokey *p, const uint32_t *borrows, uint8_t timer_completed);
 
 /* Reload timer w.  Fast timers restart a machine-cycle countdown.  Slow
  * timers reload their counter too, but the shared 64/15KHz clock phase is
@@ -487,40 +511,6 @@ static void rearm_timer(ad_pokey *p, int w)
     p->tcnt[w] = slow_clock_delay(p) + (ticks - 1) * period;
 }
 
-static void update_render_channel(ad_pokey *p, int ch)
-{
-    if (p->cycle_audio) return;
-    if (ch < 0 || ch >= 4)
-        return;
-
-    /* update_channel_freq(): set Div_n_max(render); clamp Div_n_cnt down */
-    uint32_t new_val = channel_period(p->AUDF, p->AUDCTL, p->base_mult, ch);
-    if (new_val != p->rmax[ch]) {
-        p->rmax[ch] = new_val;
-        if (p->cnt[ch] > new_val)
-            p->cnt[ch] = new_val;
-    }
-
-    /* Outvol seeding + disable (freeze) */
-    uint8_t audc = p->AUDC[ch];
-    uint32_t samp_thresh = p->samp_max >> 8;
-    /* Zero volume mutes the DAC, not the divider/output flip-flop. The
-     * shield script repeatedly writes C0 before raising the volume;
-     * freezing here restarts its oscillator on every retrigger. */
-    if ((audc & AUDC_VOLONLY) || (p->rmax[ch] < samp_thresh)) {
-        p->out[ch] = 1;   /* Outvol = 1 (participates in the initial DC sum) */
-
-        bool disable =
-            (ch == 2 && !(p->AUDCTL & CTL_CH1_FILTER)) ||
-            (ch == 3 && !(p->AUDCTL & CTL_CH2_FILTER)) ||
-            (ch == 0 || ch == 1) ||
-            (p->rmax[ch] < samp_thresh);
-        if (disable) {
-            p->rmax[ch] = p->cnt[ch] = 0x7FFFFFFF;
-        }
-    }
-}
-
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
@@ -529,10 +519,7 @@ void ad_pokey_reset(ad_pokey *p)
 {
     for (int i = 0; i < 4; ++i) {
         p->AUDF[i] = p->AUDC[i] = 0;
-        p->rmax[i] = 0x7FFFFFFF;
-        p->cnt[i] = 0;
         p->out[i] = 0;
-        p->vol[i] = 0;
     }
     p->AUDCTL = 0;
     p->base_mult = DIV_64;
@@ -541,9 +528,7 @@ void ad_pokey_reset(ad_pokey *p)
      * from below.  Seeding them with the whole base clock instead only
      * worked while an AUDCTL write re-armed every timer. */
     recompute_all(p);
-    p->p4 = p->p5 = p->p9 = p->p17 = p->poly_adjust = 0;
-    p->samp_cnt = 0;
-    p->samp_max = p->sys_freq ? ((p->base_clock << 8) / p->sys_freq) : 0;
+    p->p4 = p->p5 = p->p9 = p->p17 = 0;
     p->SKCTL = 0;
     p->pot_scanning = false;
     p->pot_scan_ever = false;
@@ -586,10 +571,9 @@ void ad_pokey_reset(ad_pokey *p)
     p->st_latch = 0;
     p->external_clock = 0;
     p->clock_out_phase = p->clock_bi_phase = 0;
+    p->serial_output_delay = 0;
     p->cassette_level = 1;
-    p->audio_phase = p->audio_dropped = 0;
-    p->audio_area = 0;
-    p->audio_head = p->audio_count = 0;
+    audio_queue_clear(p);
     p->highpass_latch[0] = p->highpass_latch[1] = 1;
     memset(p->highpass_delay, 0, sizeof p->highpass_delay);
     p->noise4_history = p->noise917_history = 0;
@@ -609,6 +593,9 @@ void ad_pokey_init(ad_pokey *p, uint32_t clock_hz, uint32_t sample_rate)
     p->sys_freq = sample_rate ? sample_rate : 1;
     p->quiet_skip = true;
     build_tables();
+    /* The measured DAC is the chip; 20 Hz DC removal at unity gain is the
+     * default playback stage (ad_pokey_set_measured_audio() changes it). */
+    audio_playback_config(p, 20.0, 1.0);
     ad_pokey_reset(p);
 }
 
@@ -728,10 +715,8 @@ void ad_pokey_set_clocks(ad_pokey *p, const ad_pokey_clocks *clocks)
 static void advance_clock(ad_pokey *p)
 {
     const uint32_t cycles = 1;
-    if (p->cycle_audio) {
-        cycle_audio_sample(p);
-        cycle_audio_sample(p);
-    }
+    cycle_audio_sample(p);
+    cycle_audio_sample(p);
     p->cycles += cycles;
     build_tables();
 
@@ -892,10 +877,6 @@ static void advance_clock(ad_pokey *p)
         if (p->twotone_delay && --p->twotone_delay == 0) {
             rearm_timer(p, 0);
             rearm_timer(p, 1);
-            if (!p->cycle_audio) {
-                p->cnt[0] = p->cnt[1] = 0;
-                p->out[0] = p->out[1] = 0;
-            }
         }
         bool mark = sdo_line(p);
         if (borrows[1] || (borrows[0] && mark)) {
@@ -907,8 +888,8 @@ static void advance_clock(ad_pokey *p)
         p->twotone_delay = 0;
     }
 
-    serial_step(p, borrows);
-    if (p->cycle_audio) cycle_audio_step(p, borrows);
+    serial_step(p, borrows, due);
+    cycle_audio_step(p, borrows);
     notify_pins(p);
 }
 
@@ -933,7 +914,7 @@ static uint32_t quiet_span(const ad_pokey *p, uint32_t limit)
 {
     if (!p->quiet_skip)
         return 0;
-    if (p->timer_irq_pending || p->twotone_delay ||
+    if (p->timer_irq_pending || p->twotone_delay || p->serial_output_delay ||
         p->highpass_delay[0] || p->highpass_delay[1])
         return 0;
     /* With a filter bit clear, the one-clock path forces that latch to 1
@@ -963,8 +944,7 @@ static uint32_t quiet_span(const ad_pokey *p, uint32_t limit)
 
 static void advance_quiet(ad_pokey *p, uint32_t k)
 {
-    if (p->cycle_audio)
-        cycle_audio_integrate(p, cycle_audio_level(p), 2u * k);
+    cycle_audio_integrate(p, cycle_audio_level(p), 2u * k);
     p->cycles += k;
 
     const bool sel9 = (p->AUDCTL & CTL_POLY9) != 0;
@@ -972,8 +952,7 @@ static void advance_quiet(ad_pokey *p, uint32_t k)
     for (uint32_t i = 0; i < k; ++i) {
         chain_step(&p->rng, p->rng_init_prev != 0, sel9);
         p->rng_init_prev = (uint8_t)!p->rng_enabled;
-        if (p->cycle_audio)
-            cycle_audio_noise_clock(p, running);
+        cycle_audio_noise_clock(p, running);
     }
 
     for (int w = 0; w < 4; ++w)
@@ -1015,35 +994,25 @@ void ad_pokey_write(ad_pokey *p, uint8_t reg, uint8_t v)
      * touch a divisor, so they must not reset a timer's phase. */
     case W_AUDF1:
         p->AUDF[0] = v;
-        recompute_channel(p, 0); update_render_channel(p, 0);
-        if (p->AUDCTL & CTL_CH12_JOIN) { recompute_channel(p, 1); update_render_channel(p, 1); }
+        recompute_channel(p, 0);
+        if (p->AUDCTL & CTL_CH12_JOIN) recompute_channel(p, 1);
         break;
     case W_AUDF2:
-        p->AUDF[1] = v; recompute_channel(p, 1); update_render_channel(p, 1);
+        p->AUDF[1] = v; recompute_channel(p, 1);
         break;
     case W_AUDF3:
         p->AUDF[2] = v;
-        recompute_channel(p, 2); update_render_channel(p, 2);
-        if (p->AUDCTL & CTL_CH34_JOIN) {
-            recompute_channel(p, 3); update_render_channel(p, 3);
-        }
+        recompute_channel(p, 2);
+        if (p->AUDCTL & CTL_CH34_JOIN) recompute_channel(p, 3);
         break;
     case W_AUDF4:
-        p->AUDF[3] = v; recompute_channel(p, 3); update_render_channel(p, 3);
+        p->AUDF[3] = v; recompute_channel(p, 3);
         break;
 
-    case W_AUDC1:
-        p->AUDC[0] = v; p->vol[0] = (v & AUDC_VOLMASK) * POKEY_GAIN;
-        recompute_channel(p, 0); update_render_channel(p, 0); break;
-    case W_AUDC2:
-        p->AUDC[1] = v; p->vol[1] = (v & AUDC_VOLMASK) * POKEY_GAIN;
-        recompute_channel(p, 1); update_render_channel(p, 1); break;
-    case W_AUDC3:
-        p->AUDC[2] = v; p->vol[2] = (v & AUDC_VOLMASK) * POKEY_GAIN;
-        recompute_channel(p, 2); update_render_channel(p, 2); break;
-    case W_AUDC4:
-        p->AUDC[3] = v; p->vol[3] = (v & AUDC_VOLMASK) * POKEY_GAIN;
-        recompute_channel(p, 3); update_render_channel(p, 3); break;
+    case W_AUDC1: p->AUDC[0] = v; recompute_channel(p, 0); break;
+    case W_AUDC2: p->AUDC[1] = v; recompute_channel(p, 1); break;
+    case W_AUDC3: p->AUDC[2] = v; recompute_channel(p, 2); break;
+    case W_AUDC4: p->AUDC[3] = v; recompute_channel(p, 3); break;
 
     case W_AUDCTL: {
         /* A rewrite of the current value is a no-op (MAME pokey.cpp returns
@@ -1067,8 +1036,6 @@ void ad_pokey_write(ad_pokey *p, uint8_t reg, uint8_t v)
         p->AUDCTL = v;
         p->base_mult = (v & CTL_CLK15) ? DIV_15 : DIV_64;
         recompute_all(p);
-        for (int i = 0; i < 4; ++i)
-            update_render_channel(p, i);
         const uint8_t changed = (uint8_t)(old ^ v);
         for (int w = 0; w < 4; ++w) {
             const bool link_changed = (w < 2) ? (changed & CTL_CH12_JOIN) != 0
@@ -1083,7 +1050,7 @@ void ad_pokey_write(ad_pokey *p, uint8_t reg, uint8_t v)
     }
 
     case W_STIMER:
-        for (int i = 0; i < 4; ++i) { p->cnt[i] = 0; p->out[i] = p->cycle_audio ? 1 : 0; }
+        for (int i = 0; i < 4; ++i) p->out[i] = 1;
         /* HRM 5.3: T4 is the last STIMER strobe that preempts the T8
          * IRQ for fast AUDF=0. Only the just-entered borrow stage is
          * cancelable; preserve interrupts further down the pipeline. */
@@ -1103,8 +1070,8 @@ void ad_pokey_write(ad_pokey *p, uint8_t reg, uint8_t v)
          * reset the timer counters themselves (Altirra HRM 5.2): entering
          * init saves how many source pulses each slow timer still needs,
          * and leaving init re-anchors that count to the freshly reset clock
-         * phase.  The render's poly phases restart from the seed on entering
-         * reset and ad_pokey_render() holds still until release. */
+         * phase.  The audio poly phases restart from the seed on entering
+         * reset and hold still until release. */
         if (v == p->SKCTL)
             break;
         {
@@ -1117,7 +1084,10 @@ void ad_pokey_write(ad_pokey *p, uint8_t reg, uint8_t v)
             p->SKCTL = v;
             /* HRM 5.6: clock select 000 resets both serial clock dividers,
              * independently of the SKCTL initialization bits. */
-            if (!(v & 0x70)) p->clock_out_phase = p->clock_bi_phase = 0;
+            if (!(v & 0x70)) {
+                p->clock_out_phase = p->clock_bi_phase = 0;
+                p->serial_output_delay = 0;
+            }
             if (!(v & SK_TWOTONE)) p->cassette_level = 1;
             p->rng_enabled = now_running ? 1 : 0;
 
@@ -1125,13 +1095,14 @@ void ad_pokey_write(ad_pokey *p, uint8_t reg, uint8_t v)
                 slow_clocks_leave_init(p);
         }
         if (!p->rng_enabled) {
-            p->p4 = p->p5 = p->p9 = p->p17 = p->poly_adjust = 0;
+            p->p4 = p->p5 = p->p9 = p->p17 = 0;
             /* Init also resets both serial state machines (SER_core.v's
              * istate/ostate): a frame in flight is abandoned and the
              * data register counts as taken. */
             p->sdi_busy = false;
             p->sdo_busy = false;
             p->sdo_pending = false;
+            p->serial_output_delay = 0;
         }
         break;
 
@@ -1521,7 +1492,10 @@ static void serial_edges(ad_pokey *p, int ti, int to, const uint32_t *borrows, b
                     p->host->serial_out(p->host->ctx, p->sdo_byte);
             }
 
-            if (!p->sdo_busy && p->sdo_pending) {
+            /* Internal borrows are half-bit edges. serial_step has already
+             * advanced the divider phase; a falling edge cannot load SEROUT.
+             * External calls contain only rising bit-cell edges. */
+            if (!p->sdo_busy && p->sdo_pending && (external || p->clock_out_phase)) {
                 p->sdo_byte = p->SEROUT;
                 p->sdo_pending = false;
                 p->sdo_busy = true;
@@ -1540,15 +1514,31 @@ static void serial_edges(ad_pokey *p, int ti, int to, const uint32_t *borrows, b
     }
 }
 
-static void serial_step(ad_pokey *p, const uint32_t *borrows)
+static void serial_step(ad_pokey *p, const uint32_t *borrows, uint8_t timer_completed)
 {
     /* HRM table 10: the output divider selects timer 2 or 4. The other
      * divider uses timer 4 and drives the bidirectional pin in modes 010
      * and 110. Clocking is independent of AUDC and of queued serial data. */
     int to = sdo_timer(p);
-    if (to >= 0) p->clock_out_phase ^= (uint8_t)(borrows[to] & 1);
+    /* Our borrows[] are the early counter event, four clocks before the
+     * timer IRQ stage. Output clocking uses the completed timer stage,
+     * independent of IRQEN, followed by a two-clock serial action pipeline.
+     * Acid800 sertiming brackets the resulting first load at STIMER+234
+     * for period 228. Altirra FireTimer schedules SerialOutput two clocks
+     * after its timer IRQ stage; the schematic transcription likewise has
+     * separate divider, edge-detector and output-state stages.
+     * Receive timing and external clock calls have separate paths. */
+    if (p->serial_output_delay && --p->serial_output_delay == 0 && to >= 0) {
+        uint32_t output_edge[4] = {0,0,0,0};
+        output_edge[to] = 1;
+        serial_edges(p, -1, to, output_edge, false);
+    }
+    if (to >= 0 && (timer_completed & timer_irq_bit(to))) {
+        p->clock_out_phase ^= 1;
+        p->serial_output_delay = 2;
+    }
     if (p->SKCTL & 0x30) p->clock_bi_phase ^= (uint8_t)(borrows[2] & 1);
-    serial_edges(p, sdi_timer(p), sdo_timer(p), borrows, false);
+    serial_edges(p, sdi_timer(p), -1, borrows, false);
     notify_clocks(p, false);
 }
 
@@ -1607,42 +1597,40 @@ void ad_pokey_poll(ad_pokey *p)
 }
 
 /* ------------------------------------------------------------------ */
-/* Render                                                              */
+/* Audio                                                               */
 /* ------------------------------------------------------------------ */
-/* Event-driven sound renderer: a clean-room reimplementation of the
- * proven Ron-Fries Pokey_process event loop.  It walks to the nearest
- * of {a channel divider expiry, the next sample boundary}, advances the
- * poly phases, toggles/samples each channel honoring NOTPOLY5 gating,
- * PURE/POLY4/POLY9/POLY17 selection, VOL_ONLY, and the CH1/CH2
- * high-pass filters, then emits one clipped int16 per sample boundary.
- *
- * Fixed-point note: samp_cnt is the sample-phase accumulator in Q8
- * (base-clock ticks << 8); samp_max = (base_clock << 8) / sys_freq.
- * The whole-ticks remaining until the next sample is samp_cnt >> 8.
- * Channel dividers (rmax/cnt) are in whole base-clock ticks.  A frozen
- * channel has rmax = cnt = 0x7FFFFFFF and never becomes the event
- * minimum, so it never toggles - it only contributes its (seeded)
- * Outvol to the running sum. */
+/* Cycle audio: ad_pokey_advance() integrates the DAC level over every
+ * half clock into a sample queue at sys_freq (cycle_audio_sample() and
+ * friends below); ad_pokey_audio_read()/ad_pokey_render() drain it. */
 
-/* suppress(): the high-pass-filter lambda from aae_pokey.cpp, as a
- * static function - a ch3 transition clocks (latches) ch1; ch4 clocks
- * ch2. */
-static void suppress(ad_pokey *p, int32_t *cur, int next, uint8_t filt, int trig, int tgt)
+/* Drop queued PCM and the integrator/DC-tracker state; the oscillators,
+ * latches and registers are untouched. */
+static void audio_queue_clear(ad_pokey *p)
 {
-    if ((p->AUDCTL & filt) && next == trig && p->out[tgt]) {
-        p->out[tgt] = 0;
-        *cur -= p->vol[tgt];
-    }
-}
-
-void ad_pokey_set_cycle_audio(ad_pokey *p, bool enabled)
-{
-    p->cycle_audio = enabled;
     p->audio_phase = p->audio_dropped = 0;
     p->audio_area = 0;
     p->audio_head = p->audio_count = 0;
-    if (!enabled)
-        for (int i = 0; i < 4; ++i) update_render_channel(p, i);
+    p->audio_dc = 0;
+}
+
+/* The playback stage after the DAC curve: a one-pole DC block at dc_hz
+ * (0 = none, the unipolar DAC signal) and a gain, both at sys_freq. */
+static void audio_playback_config(ad_pokey *p, double dc_hz, double gain)
+{
+    p->audio_gain = isfinite(gain) && gain >= 0 ? gain : 1.0;
+    p->audio_dc_decay = isfinite(dc_hz) && dc_hz > 0 ?
+        exp(-6.283185307179586 * dc_hz / p->sys_freq) : 1.0;
+}
+
+void ad_pokey_audio_clear(ad_pokey *p)
+{
+    audio_queue_clear(p);
+}
+
+void ad_pokey_set_measured_audio(ad_pokey *p, double dc_hz, double gain)
+{
+    audio_playback_config(p, dc_hz, gain);
+    audio_queue_clear(p);
 }
 
 uint32_t ad_pokey_audio_available(const ad_pokey *p) { return p->audio_count; }
@@ -1660,17 +1648,23 @@ int ad_pokey_audio_read(ad_pokey *p, int16_t *dst, int n)
     return n;
 }
 
-/* The DAC sum for the current channel outputs, latches and volumes. */
+/* The DAC level for the current channel outputs, latches and volumes:
+ * each channel whose output is high adds its AUDC volume's weight (the
+ * four measured bit drops .12/.26/.56/1.12 V in .02 V units, summed per
+ * nibble), and the shared curve turns the total into PCM. */
 static int32_t cycle_audio_level(const ad_pokey *p)
 {
-    int32_t level = 0;
+    static const uint8_t weights[16] = {
+        0,6,13,19,28,34,41,47,56,62,69,75,84,90,97,103
+    };
+    unsigned sum = 0;
     for (int i = 0; i < 4; ++i) {
         uint8_t bit = p->out[i];
         if (i < 2) bit ^= p->highpass_latch[i];
         if (p->AUDC[i] & AUDC_VOLONLY) bit = 1;
-        level += (bit ? p->vol[i] : 0) - p->vol[i] / 2;
+        if (bit) sum += weights[p->AUDC[i] & AUDC_VOLMASK];
     }
-    return level;
+    return g_dac_curve[sum];
 }
 
 /* Integrate `level` over `halves` half clocks into the sample queue.
@@ -1687,9 +1681,14 @@ static void cycle_audio_integrate(ad_pokey *p, int32_t level, uint32_t halves)
         p->audio_phase += span;
         remaining -= span;
         if (p->audio_phase == sample_span) {
-            int64_t value = p->audio_area / (int64_t)sample_span;
-            if (value > 32767) value = 32767;
-            if (value < -32768) value = -32768;
+            /* The bias rides through the nonlinear DAC and the integration;
+             * only the playback stage removes DC and scales gain. */
+            double raw = (double)p->audio_area / (double)sample_span;
+            double output = (raw - p->audio_dc) * p->audio_gain;
+            p->audio_dc += (raw - p->audio_dc) * (1.0 - p->audio_dc_decay);
+            if (output > 32767.0) output = 32767.0;
+            if (output < -32768.0) output = -32768.0;
+            int64_t value = (int64_t)output;
             if (p->audio_count == AD_POKEY_AUDIO_CAPACITY) {
                 p->audio_head = (p->audio_head + 1) % AD_POKEY_AUDIO_CAPACITY;
                 --p->audio_count;
@@ -1755,86 +1754,6 @@ void ad_pokey_render(ad_pokey *p, int16_t *dst, int n)
 {
     if (!dst || n <= 0)
         return;
-    if (p->cycle_audio) {
-        int got = ad_pokey_audio_read(p, dst, n);
-        memset(dst + got, 0, (size_t)(n - got) * sizeof *dst);
-        return;
-    }
-    build_tables();
-    const uint8_t *poly4 = g_poly4;
-    const uint8_t *poly5 = g_poly5;
-    const uint8_t *poly9 = g_poly9;
-    const uint8_t *poly17 = g_poly17;
-
-    if (p->samp_max == 0)
-        p->samp_max = p->sys_freq ? ((p->base_clock << 8) / p->sys_freq) : 1;
-
-    /* Initial output summation: each channel contributes -AUDV/2, plus
-     * +AUDV if its output latch (Outvol) is currently high. */
-    int32_t cur = 0;
-    for (int c = 0; c < 4; ++c) {
-        cur -= p->vol[c] / 2;
-        if (p->out[c])
-            cur += p->vol[c];
-    }
-
-    /* SKCTL reset (init bits clear) holds the chip: neither the
-     * polynomial counters nor the channel dividers clock, so every
-     * output sits at its current level and only the sample clock keeps
-     * running - no channel event can fire, no countdown moves, no poly
-     * phase advances. */
-    const bool held = !p->rng_enabled;
-
-    enum { SAMPLE_EVENT = 127 };
-    int produced = 0;
-    while (produced < n) {
-        int next = SAMPLE_EVENT;
-        uint32_t event_min = p->samp_cnt >> 8;   /* whole ticks until next sample */
-
-        /* Nearest channel-divider expiry; ties (<=) resolve to the channel. */
-        if (!held) {
-            for (int c = 0; c < 4; ++c) {
-                if (p->cnt[c] <= event_min) { event_min = p->cnt[c]; next = c; }
-            }
-            for (int c = 0; c < 4; ++c)
-                p->cnt[c] -= event_min;
-            p->poly_adjust += event_min;
-        }
-        p->samp_cnt -= (event_min << 8);
-
-        if (next != SAMPLE_EVENT) {
-            /* Advance the poly phases by the elapsed ticks. */
-            p->p4 = (p->p4 + p->poly_adjust) % 0x0000F;
-            p->p5 = (p->p5 + p->poly_adjust) % 0x0001F;
-            p->p9 = (p->p9 + p->poly_adjust) % 0x001FF;
-            p->p17 = (p->p17 + p->poly_adjust) % 0x1FFFF;
-            p->poly_adjust = 0;
-
-            p->cnt[next] += p->rmax[next];
-            const uint8_t audc = p->AUDC[next];
-            uint8_t *outp = &p->out[next];
-            bool toggle = false;
-            if (!(audc & AUDC_VOLONLY)) {
-                if ((audc & AUDC_NOTPOLY5) || poly5[p->p5]) {
-                    if (audc & AUDC_PURE)         toggle = true;
-                    else if (audc & AUDC_POLY4)   toggle = (poly4[p->p4] == !(*outp));
-                    else if (p->AUDCTL & CTL_POLY9) toggle = (poly9[p->p9] == !(*outp));
-                    else                           toggle = (poly17[p->p17] == !(*outp));
-                }
-            }
-
-            suppress(p, &cur, next, CTL_CH1_FILTER, 2, 0);
-            suppress(p, &cur, next, CTL_CH2_FILTER, 3, 1);
-
-            if (toggle) {
-                if (*outp) { cur -= p->vol[next]; *outp = 0; }
-                else       { cur += p->vol[next]; *outp = 1; }
-            }
-        } else {
-            p->samp_cnt += p->samp_max;
-            int32_t v = cur;
-            if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
-            dst[produced++] = (int16_t)v;
-        }
-    }
+    int got = ad_pokey_audio_read(p, dst, n);
+    memset(dst + got, 0, (size_t)(n - got) * sizeof *dst);
 }

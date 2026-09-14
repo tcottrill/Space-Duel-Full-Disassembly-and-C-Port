@@ -18,7 +18,6 @@ int main(void)
     const int ticks = 2461;               /* ~10 s of machine time */
     for (int i = 0; i < 2; ++i) {
         ad_pokey_init(&p[i], 1512000, 44100);
-        ad_pokey_set_cycle_audio(&p[i], true);
         ad_pokey_write(&p[i], W_SKCTL, 0); ad_pokey_write(&p[i], W_SKCTL, 7);
     }
     ad_pokey_write(&p[0], W_AUDF1, 0xB0);

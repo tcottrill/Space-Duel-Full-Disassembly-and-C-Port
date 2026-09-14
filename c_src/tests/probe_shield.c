@@ -23,8 +23,6 @@ int main(int argc, char **argv)
     unsigned samples = 0;
     int nonzero = 0;
     for (int i = 0; i < 2; ++i) ad_pokey_init(&chips[i], 1512000, 44100);
-    if (argc > 3 && argv[3][0] == 'c')
-        for (int i = 0; i < 2; ++i) ad_pokey_set_cycle_audio(&chips[i], true);
     inisou();
     g.ram[0x35] = 0x80;
     for (int tick = 0; tick < 1500; ++tick) {

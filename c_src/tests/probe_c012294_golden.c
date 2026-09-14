@@ -1,7 +1,7 @@
 /* probe_c012294_golden.c - A/B behaviour hash for c012294.c.
  *
- * Drives one chip through scripted scenarios that cover the audio paths
- * (cycle and legacy), every AUDCTL clock/join/filter/poly bit, STIMER,
+ * Drives one chip through scripted scenarios that cover the audio path,
+ * every AUDCTL clock/join/filter/poly bit, STIMER,
  * SKCTL init and two-tone/async/serial modes, timer IRQs, the serial
  * port in both directions, the pot scanner, the keyboard and RANDOM, and
  * hashes every sample, every register read and every host callback with
@@ -39,10 +39,9 @@ static ad_pokey_host host = { NULL, cb_irq, cb_pot, cb_kbd, cb_serin, cb_serout 
 static ad_pokey_io io = { NULL, cb_irq_line, cb_ser_line };
 static ad_pokey_clocks clocks = { NULL, cb_clk_out, cb_clk_bi };
 
-static int cycle_mode;
 static unsigned samples;
 
-/* Advance in a jagged batch pattern and drain/render audio as a host would. */
+/* Advance in a jagged batch pattern and drain audio as a host would. */
 static void run(uint32_t cycles)
 {
     static int16_t pcm[4096];
@@ -51,16 +50,9 @@ static void run(uint32_t cycles)
         if (step > cycles) step = cycles;
         ad_pokey_advance(&chip, step);
         cycles -= step;
-        if (cycle_mode) {
-            int n = ad_pokey_audio_read(&chip, pcm, 4096);
-            for (int i = 0; i < n; ++i) hb((uint16_t)pcm[i]);
-            samples += (unsigned)n;
-        } else if ((rnd() & 3) == 0) {
-            int n = 1 + (int)(rnd() % 40);
-            ad_pokey_render(&chip, pcm, n);
-            for (int i = 0; i < n; ++i) hb((uint16_t)pcm[i]);
-            samples += (unsigned)n;
-        }
+        int n = ad_pokey_audio_read(&chip, pcm, 4096);
+        for (int i = 0; i < n; ++i) hb((uint16_t)pcm[i]);
+        samples += (unsigned)n;
     }
 }
 
@@ -73,15 +65,13 @@ static void snapshot(void)
     for (int i = 0; i < 4; ++i) { hb(chip.tcnt[i]); hb(chip.out[i]); }
 }
 
-static void fresh(int cyc)
+static void fresh(void)
 {
-    cycle_mode = cyc;
     ad_pokey_init(&chip, 1512000, 44100);
     ad_pokey_set_host(&chip, &host);
     ad_pokey_set_io(&chip, &io);
     ad_pokey_set_clocks(&chip, &clocks);
     ad_pokey_set_allpot(&chip, 0xA5);
-    ad_pokey_set_cycle_audio(&chip, cyc != 0);
 }
 
 static void report(const char *name)
@@ -91,9 +81,9 @@ static void report(const char *name)
 
 /* 1. The Space Duel shield: fixed AUDF, C0/C2/C4/C6 per 6144-cycle tick,
  *    RANDOM reads charged in 64-cycle steps between ticks. */
-static void scen_shield(int cyc)
+static void scen_shield(void)
 {
-    fresh(cyc);
+    fresh();
     wr(W_SKCTL, 0); wr(W_SKCTL, 7);
     wr(W_AUDF1, 0xB0);
     static const uint8_t vols[4] = { 0xC0, 0xC2, 0xC4, 0xC6 };
@@ -110,12 +100,12 @@ static void scen_shield(int cyc)
 }
 
 /* 2. Every AUDCTL mode with mixed distortions and both timer IRQs live. */
-static void scen_audctl(int cyc)
+static void scen_audctl(void)
 {
     static const uint8_t ctls[] = { 0x00, 0x01, 0x40, 0x20, 0x60, 0x50, 0x28, 0x78,
                                     0x04, 0x02, 0x06, 0x80, 0x81, 0xC4, 0xAA, 0x7F };
     static const uint8_t dists[] = { 0xA0, 0xC4, 0x84, 0x24, 0x10, 0x64, 0x08, 0x44, 0xE7 };
-    fresh(cyc);
+    fresh();
     wr(W_SKCTL, 3);
     wr(W_IRQEN, 0x07);
     for (unsigned c = 0; c < sizeof ctls; ++c) {
@@ -137,9 +127,9 @@ static void scen_audctl(int cyc)
 }
 
 /* 3. SKCTL init in and out mid-run, held-chip reads, poly restarts. */
-static void scen_init(int cyc)
+static void scen_init(void)
 {
-    fresh(cyc);
+    fresh();
     for (int i = 0; i < 4; ++i) { wr((uint8_t)(i * 2), (uint8_t)(3 + i * 37)); wr((uint8_t)(i * 2 + 1), 0xA8); }
     wr(W_IRQEN, 0x07);
     for (int rep = 0; rep < 12; ++rep) {
@@ -159,9 +149,9 @@ static void scen_init(int cyc)
 
 /* 4. Two-tone, break, async receive, internal serial both ways, external
  *    clock edges, direct line driving, the keyboard, SKREST. */
-static void scen_serial(int cyc)
+static void scen_serial(void)
 {
-    fresh(cyc);
+    fresh();
     wr(W_SKCTL, 0x03);
     wr(W_AUDF1, 0x08); wr(W_AUDF2, 0x0C); wr(W_AUDF3, 0x20); wr(W_AUDF4, 0x05);
     wr(W_AUDCTL, 0x28);
@@ -196,10 +186,10 @@ static void scen_serial(int cyc)
 }
 
 /* 5. Pots: legacy digital scan and the counter model, slow and fast. */
-static void scen_pots(int cyc)
+static void scen_pots(void)
 {
     for (int counter = 0; counter < 2; ++counter) {
-        fresh(cyc);
+        fresh();
         ad_pokey_set_pot_scan(&chip, counter != 0);
         wr(W_SKCTL, 0x03);
         rd(R_ALLPOT);
@@ -216,9 +206,9 @@ static void scen_pots(int cyc)
 }
 
 /* 6. Reset semantics: reset mid-run keeps cycles/allpot/host, clears the rest. */
-static void scen_reset(int cyc)
+static void scen_reset(void)
 {
-    fresh(cyc);
+    fresh();
     wr(W_SKCTL, 0x07); wr(W_AUDF1, 0x11); wr(W_AUDC1, 0xA8); wr(W_IRQEN, 1);
     run(5000);
     ad_pokey_reset(&chip);
@@ -226,27 +216,21 @@ static void scen_reset(int cyc)
     run(3000);
     wr(W_SKCTL, 0x07); wr(W_AUDF2, 0x02); wr(W_AUDC2, 0xC8); wr(W_AUDCTL, 0x10);
     run(6000);
-    ad_pokey_set_cycle_audio(&chip, cyc == 0);   /* flip modes mid-run */
-    cycle_mode = cyc == 0;
+    ad_pokey_audio_clear(&chip);                 /* a host restart mid-run */
     run(6000);
     snapshot();
 }
 
 int main(void)
 {
-    for (int cyc = 0; cyc < 2; ++cyc) {
-        char name[40];
-        const char *tag = cyc ? "cycle" : "legacy";
-        lcg = 12345;
-#define SCEN(fn) do { h = 2166136261u; samples = 0; events = 0; fn(cyc); \
-                      snprintf(name, sizeof name, #fn " (%s)", tag); report(name); } while (0)
-        SCEN(scen_shield);
-        SCEN(scen_audctl);
-        SCEN(scen_init);
-        SCEN(scen_serial);
-        SCEN(scen_pots);
-        SCEN(scen_reset);
+    lcg = 12345;
+#define SCEN(fn) do { h = 2166136261u; samples = 0; events = 0; fn(); report(#fn); } while (0)
+    SCEN(scen_shield);
+    SCEN(scen_audctl);
+    SCEN(scen_init);
+    SCEN(scen_serial);
+    SCEN(scen_pots);
+    SCEN(scen_reset);
 #undef SCEN
-    }
     return 0;
 }

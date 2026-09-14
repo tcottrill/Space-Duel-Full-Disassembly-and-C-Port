@@ -20,11 +20,10 @@
  * affect reload values, not the active count. IRQEN gates interrupt
  * latching without restarting timers or their source clocks.
  *
- * Enable ad_pokey_set_cycle_audio() for CPU-driven hosts: advance generates
- * audio from the same counters and render drains completed samples (silence
- * on underrun). audio_read returns only available samples. Legacy rendering
- * remains the default and advances a separate audio timeline; legacy hosts
- * should render elapsed audio before changing sound registers.
+ * Audio comes from the same timeline: advance generates samples from the
+ * same counters (the chip's DAC, see ad_pokey_set_measured_audio) and
+ * render drains completed samples (silence on underrun); audio_read returns
+ * only available samples. There is no separate audio clock.
  *
  * Keep board addresses, CPU scheduling, audio devices and DIP mapping in
  * the host adapter. See docs/POKEY-PORTING.md for integration guidance
@@ -140,9 +139,6 @@ typedef struct ad_rng_chain {
                         * the one-clock blank when the select flips */
 } ad_rng_chain;
 
-/* ---- render gain: AUDC volume nibble (0-15) times this is the level a
- * fully-on channel contributes to a sample ---- */
-#define POKEY_GAIN (32767 / 11)
 #define AD_POKEY_AUDIO_CAPACITY 2048
 
 /* Optional host callbacks. The core stores this pointer without copying it;
@@ -198,14 +194,10 @@ typedef struct ad_pokey {
     uint32_t divisor[4];     /* true half-period in base-clock ticks; also
                                * the period each hardware timer below re-
                                * arms to (channel_period(), recompute_channel()) */
-    uint32_t rmax[4];        /* render Div_n_max (= divisor[i], or frozen) */
-    uint32_t cnt[4];         /* render countdown (Div_n_cnt) */
-    uint8_t  out[4];         /* render output level / toggle latch (Outvol) */
-    int32_t  vol[4];         /* AUDC volume * GAIN (AUDV) */
+    uint8_t  out[4];         /* channel output level / toggle latch (Outvol) */
 
-    /* poly render phases + sample clock */
-    uint32_t p4, p5, p9, p17, poly_adjust;
-    uint32_t samp_cnt, samp_max;
+    /* audio poly phases */
+    uint32_t p4, p5, p9, p17;
 
     /* RNG: the RANDOM shift chain (see ad_rng_chain), clocked by
      * ad_pokey_advance() every POKEY cycle; rng_enabled is SKCTL's init
@@ -319,6 +311,7 @@ typedef struct ad_pokey {
     const ad_pokey_io *io;
     const ad_pokey_clocks *clocks;
     uint8_t clock_out_phase, clock_bi_phase;
+    uint8_t serial_output_delay; /* timer IRQ stage to serial action: two clocks */
     uint8_t clock_out_level, clock_bi_level, clock_bi_driven;
     uint8_t irq_level, serial_level, external_clock, cassette_level;
     bool pot_counter_mode;
@@ -326,7 +319,7 @@ typedef struct ad_pokey {
     uint8_t pot_latch[8];
     bool pot_transition;
     uint64_t pot_next_tick;
-    bool cycle_audio;
+    double audio_dc, audio_dc_decay, audio_gain; /* playback stage after the DAC */
     bool quiet_skip;          /* step event-free clock runs together (default on) */
     uint8_t highpass_latch[2];
     uint8_t highpass_pending[2], highpass_delay[2];
@@ -348,10 +341,18 @@ bool ad_pokey_irq_asserted(const ad_pokey *p);
  * changing a pin to 0 latches its counter independently. Default is legacy
  * digital scan timeout with direct host POT reads. Select before POTGO. */
 void ad_pokey_set_pot_scan(ad_pokey *p, bool enabled);
-/* Select before clocking. Cycle mode samples shared hardware-counter events;
- * legacy render mode remains the default for existing hosts. Switching modes
- * clears queued audio. Overflow drops oldest samples and increments a count. */
-void ad_pokey_set_cycle_audio(ad_pokey *p, bool enabled);
+/* Drop queued PCM and the integrator state so output restarts at a fresh
+ * sample boundary; the oscillators, latches and registers are untouched.
+ * Queue overflow drops the oldest samples and increments a count. */
+void ad_pokey_audio_clear(ad_pokey *p);
+/* Cycle audio's level is the chip's DAC: HRM Appendix E.2's measured bit
+ * weights and the fitted shared saturation of the summed channels, then a
+ * playback stage that defaults to 20 Hz DC removal at unity gain.  This
+ * call changes the playback stage only: dc_hz (>=0) is host DC removal, not
+ * a motherboard model; 0 exposes the unipolar DAC signal. gain (>=0) is
+ * playback gain after DC removal. Select before clocking; clears PCM state;
+ * survives a chip reset. */
+void ad_pokey_set_measured_audio(ad_pokey *p, double dc_hz, double gain);
 /* Diagnostic: false forces every clock through the one-clock path.  The
  * default (true) steps runs of event-free clocks together with identical
  * results (c012294.c's quiet_span()); this exists to prove that live. */
@@ -373,7 +374,8 @@ void    ad_pokey_set_host(ad_pokey *p, const ad_pokey_host *h); /* NULL = no hos
 void    ad_pokey_advance(ad_pokey *p, uint32_t cycles);        /* machine time, POKEY cycles; the
                                                                 * only thing that clocks RANDOM and
                                                                 * the hardware timers */
-void    ad_pokey_render(ad_pokey *p, int16_t *dst, int n);     /* n mono samples at sample_rate */
+void    ad_pokey_render(ad_pokey *p, int16_t *dst, int n);     /* drain n mono samples at sample_rate,
+                                                                * zero-filled past what advance made */
 void    ad_pokey_keyboard_key(ad_pokey *p, uint8_t code, uint8_t flags, bool down);
                                                                /* flags: ST_SHIFT = shift key down */
 void    ad_pokey_serial_line(ad_pokey *p, int mark);          /* drive the raw input line: 1 = mark.

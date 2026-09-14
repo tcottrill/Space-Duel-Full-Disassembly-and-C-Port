@@ -4,22 +4,30 @@
 #include <string.h>
 #include "c012294.h"
 
+/* Run the chip for n samples' worth of clocks and drain them. */
+static void gen(ad_pokey *p, int16_t *dst, int n)
+{
+    ad_pokey_advance(p, (uint32_t)(((uint64_t)n * p->base_clock + p->sys_freq - 1) / p->sys_freq));
+    ad_pokey_render(p, dst, n);
+}
+
 int main(void)
 {
     ad_pokey audible, muted;
     int16_t scratch[441], a[441], b[441];
     ad_pokey_init(&audible, 1512000, 44100);
+    ad_pokey_set_measured_audio(&audible, 0, 1);   /* raw DAC: no DC tracker to diverge */
     ad_pokey_write(&audible, W_SKCTL, 7);
     ad_pokey_write(&audible, W_AUDF1, 0xB0);
     ad_pokey_write(&audible, W_AUDC1, 0xC6);
-    ad_pokey_render(&audible, scratch, 173);
+    gen(&audible, scratch, 173);
     muted = audible;
     ad_pokey_write(&muted, W_AUDC1, 0xC0);
-    ad_pokey_render(&audible, scratch, 441);
-    ad_pokey_render(&muted, scratch, 441);
+    gen(&audible, scratch, 441);
+    gen(&muted, scratch, 441);
     ad_pokey_write(&muted, W_AUDC1, 0xC6);
-    ad_pokey_render(&audible, a, 441);
-    ad_pokey_render(&muted, b, 441);
+    gen(&audible, a, 441);
+    gen(&muted, b, 441);
     if (memcmp(a, b, sizeof a)) {
         puts("FAIL: muting changed the shield oscillator phase");
         return 1;

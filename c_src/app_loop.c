@@ -247,8 +247,11 @@ static void pokey_init(void)
     pokey_read_cycles = 0;
     ad_pokey_init(&pokey[0], pokey_audio_clock_hz, SD_AUDIO_RATE);
     ad_pokey_init(&pokey[1], pokey_audio_clock_hz, SD_AUDIO_RATE);
-    ad_pokey_set_cycle_audio(&pokey[0], true);
-    ad_pokey_set_cycle_audio(&pokey[1], true);
+    /* Measured DAC weights and shared saturation, independently per chip.
+     * 20Hz DC removal and unity gain are playback settings, not a model
+     * of Space Duel's external amplifier. Chip reset preserves this setup. */
+    ad_pokey_set_measured_audio(&pokey[0], 20.0, 1.0);
+    ad_pokey_set_measured_audio(&pokey[1], 20.0, 1.0);
     ad_pokey_set_quiet_skip(&pokey[0], plat_pokey_skip() != 0);
     ad_pokey_set_quiet_skip(&pokey[1], plat_pokey_skip() != 0);
     ad_pokey_set_allpot(&pokey[0], plat_dsw_pokey1());
@@ -1062,8 +1065,8 @@ static void boot_fast(void)
 
     if (!selftest_mode) {
         /* Start live output at a fresh sample boundary, retaining oscillators. */
-        ad_pokey_set_cycle_audio(&pokey[0], true);
-        ad_pokey_set_cycle_audio(&pokey[1], true);
+        ad_pokey_audio_clear(&pokey[0]);
+        ad_pokey_audio_clear(&pokey[1]);
         audio_tick_phase = 0;
         pokey_read_cycles = 0;
         fast_clock = 0;              /* from here on: the wall clock */

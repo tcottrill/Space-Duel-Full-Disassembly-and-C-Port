@@ -24,13 +24,6 @@ int main(int argc, char **argv)
     FILE *in = fopen(argv[1], "r");
     if (!in) { perror(argv[1]); return 2; }
     int oneclock = argc > 3 && argv[3][0] == 'o';
-    /* "legacy": cycle audio off; render progressively through the legacy
-     * renderer the way the pre-cycle adapter did (each advance renders its
-     * share of the frame buffer, the drain renders the rest). */
-    int legacy = argc > 3 && argv[3][0] == 'l';
-    static double acc[4];
-    static int pos[4];
-    static int16_t fbuf[4][4096];   /* per-chip frame buffers for the legacy path */
 
     char line[128];
     int chips = 0, clock = 0, rate = 0, buflen = 0, fps = 0;
@@ -47,7 +40,6 @@ int main(int argc, char **argv)
     FILE *out[4] = { 0 };
     for (int i = 0; i < chips; ++i) {
         ad_pokey_init(&p[i], (uint32_t)clock, (uint32_t)rate);
-        ad_pokey_set_cycle_audio(&p[i], !legacy);
 #ifndef NO_QUIET_SKIP_API   /* the golden one-clock core predates the setter */
         ad_pokey_set_quiet_skip(&p[i], !oneclock);
 #endif
@@ -67,12 +59,6 @@ int main(int argc, char **argv)
         switch (op) {
         case 'A':
             ad_pokey_advance(&p[c], (uint32_t)a); clocks_total[c] += (uint32_t)a; advances[c]++;
-            if (legacy) {
-                acc[c] += (double)a * rate / clock;
-                int n = (int)acc[c];
-                if (n > buflen - pos[c]) n = buflen - pos[c];
-                if (n > 0) { ad_pokey_render(&p[c], fbuf[c] + pos[c], n); pos[c] += n; acc[c] -= n; }
-            }
             break;
         case 'W':
             ad_pokey_write(&p[c], (uint8_t)a, (uint8_t)b); writes[c]++;
@@ -83,14 +69,7 @@ int main(int argc, char **argv)
             break;
         }
         case 'F': {
-            int got;
-            if (legacy) {
-                if (pos[c] < buflen) ad_pokey_render(&p[c], fbuf[c] + pos[c], buflen - pos[c]);
-                memcpy(buf, fbuf[c], (size_t)buflen * sizeof *buf);
-                pos[c] = 0; acc[c] = 0.0;
-                got = buflen;
-            } else
-                got = ad_pokey_audio_read(&p[c], buf, buflen);
+            int got = ad_pokey_audio_read(&p[c], buf, buflen);
             if (got) last[c] = buf[got - 1];
             if (got < a) { /* the adapter's own shortfall; keep our count */ }
             if (got < buflen) { shortframes[c]++; for (int j = got; j < buflen; ++j) buf[j] = last[c]; }
