@@ -41,7 +41,6 @@ typedef struct {
 extern hl_seg hl_segs[HL_MAX_SEGS];  /* the current frame's segments       */
 extern int    hl_nsegs;              /* reset by plat_video_begin           */
 extern int    hl_frames;             /* frames completed (present count)    */
-extern int    hl_blanks;             /* blank refreshes (plat_video_blank)  */
 
 /* optional hooks, NULL = just the buffer / discard */
 extern void (*hl_vec_line_hook)(float x0, float y0, float x1, float y1,

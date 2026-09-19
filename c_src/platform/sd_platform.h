@@ -45,12 +45,6 @@ void plat_video_begin(void);                    /* start of frame / clear */
 void plat_video_line(float x0, float y0, float x1, float y1,
                      int color, int lum);
 void plat_video_present(void);                  /* flip                   */
-void plat_video_blank(void);                    /* a dropped frame: NOTHING
-                                                   new drawn - black, or
-                                                   the fading afterglow if
-                                                   the phosphor is on
-                                                   (app_loop.c, "dropped
-                                                   frames")               */
 
 /* ---- input: abstract controls ------------------------------------------
  * Polled once per displayed frame by the core (app_loop.c), which owns
@@ -139,20 +133,5 @@ void   sd_app_set_fps_lock(double fps); /* > 0: underclock the whole
                                        this rate (e.g. 60 for a 60 Hz
                                        panel; 2.48% slow). 0 = authentic
                                        61.5234 Hz. Call any time.        */
-void   sd_app_set_refresh(double hz);   /* the panel's refresh rate: while
-                                       the CPU is in a test loop the
-                                       picture is presented at this rate
-                                       and a refresh no VGGO reached is
-                                       blank (the 44 fps screen's steady
-                                       flicker). <= 0: never.            */
-void   sd_app_set_dropped_frame(int irqs, double hold_ms);
-                                    /* a pass that spends `irqs` IRQ
-                                       periods shows the cabinet's dropped
-                                       frame (nothing drawn) from the
-                                       moment the AVG finishes its list to
-                                       the next VGGO, plus `hold_ms`.
-                                       7 = the ROM's own overrun passes;
-                                       0 = never.  hold 0 = the tube's own
-                                       timing.                            */
 
 #endif /* SD_PLATFORM_H */

@@ -17,7 +17,6 @@ double hl_now_ms = 0.0;
 hl_seg hl_segs[HL_MAX_SEGS];
 int    hl_nsegs;
 int    hl_frames;
-int    hl_blanks;
 
 void (*hl_vec_line_hook)(float, float, float, float, int, int) = NULL;
 void (*hl_present_hook)(void) = NULL;
@@ -57,9 +56,6 @@ void plat_video_present(void)
     hl_frames++;
     if (hl_present_hook) hl_present_hook();
 }
-
-/* A refresh no VGGO reached: nothing to capture, just the count. */
-void plat_video_blank(void) { hl_blanks++; }
 
 /* ---- input ------------------------------------------------------------ */
 

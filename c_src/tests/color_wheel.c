@@ -151,14 +151,3 @@ void sd_app_set_fps_lock(double fps)
 {
     (void)fps;  /* no machine here to underclock (plat_win.c calls this) */
 }
-
-void sd_app_set_dropped_frame(int irqs, double hold_ms)
-{
-    (void)irqs; (void)hold_ms;  /* no dropped frames here; the wheel
-                                 * presents itself */
-}
-
-void sd_app_set_refresh(double hz)
-{
-    (void)hz;
-}

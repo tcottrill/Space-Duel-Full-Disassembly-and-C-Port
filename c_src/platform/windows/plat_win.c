@@ -190,26 +190,6 @@ static void msg_box(const char* title, const char* message)
 
 static void set_window_title(const char* title) { SetWindowTextA(hWnd, title); }
 
-/* The current mode's refresh rate of the monitor the window is on, or 0
- * if Windows will not say (dmDisplayFrequency 0 or 1 = "hardware
- * default").  An integer: a 59.94 Hz panel reports 59 or 60. */
-static float monitor_refresh_hz(HWND w)
-{
-    MONITORINFOEXW mi;
-    DEVMODEW dm;
-    HMONITOR m = MonitorFromWindow(w, MONITOR_DEFAULTTOPRIMARY);
-
-    memset(&mi, 0, sizeof mi);
-    mi.cbSize = sizeof mi;
-    if (!GetMonitorInfoW(m, (MONITORINFO*)&mi)) return 0.0f;
-    memset(&dm, 0, sizeof dm);
-    dm.dmSize = sizeof dm;
-    if (!EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm))
-        return 0.0f;
-    return dm.dmDisplayFrequency > 1 ? (float)dm.dmDisplayFrequency : 0.0f;
-}
-
-
 /* ------------------------------------------------------------------ */
 /* DPI awareness                                                       */
 /* ------------------------------------------------------------------ */
@@ -526,7 +506,7 @@ int plat_init(void)
     set_config_int("main", "vsync", swap_mode);
 
     /* Phosphor decay time constant, ms (see the block above). A tuning
-     * knob, defaulted short. 0 = off. */
+     * knob. 0 = off (the default). */
     ph_tau = (double)get_config_float("vector", "phosphor_ms", 0.0f);
     set_config_float("vector", "phosphor_ms", (float)ph_tau);
 
@@ -596,55 +576,6 @@ int plat_init(void)
         sd_app_set_fps_lock((double)fps_lock);
     }
 
-    /* Dropped frames (app_loop.c, "dropped frames: the cabinet's missed
-     * frame").  [main] dropped_frame_irqs: a pass that spends this many
-     * IRQ periods - 7, the ROM's own overrun passes, about seven per
-     * attract sequence - shows a blank with nothing drawn from the moment
-     * the AVG finishes its list to the next VGGO (~11 ms, the tube's own
-     * dark time); 0 = never.  [main] dropped_frame_hold_ms keeps the blank
-     * up that much longer, delaying the next frame; 0 (default) = the
-     * tube's own timing. */
-    {
-        int   irqs = get_config_int("main", "dropped_frame_irqs", 7);
-        float hold = get_config_float("main", "dropped_frame_hold_ms", 0.0f);
-        set_config_int("main", "dropped_frame_irqs", irqs);
-        set_config_float("main", "dropped_frame_hold_ms", hold);
-        if (irqs > 0)
-            LOG_INFO("dropped frames: a %d-IRQ pass shows a blank (%s) from the "
-                     "end of its draw to the next VGGO%s%.1f ms",
-                     irqs, ph_tau > 0.0 ? "the fading afterglow" : "black",
-                     hold > 0.0f ? " plus " : ", hold ", hold > 0.0f ? hold : 0.0f);
-        else
-            LOG_INFO("dropped frames: off (dropped_frame_irqs=0)");
-        sd_app_set_dropped_frame(irqs, (double)hold);
-    }
-
-    /* Test mode's steady flicker (app_loop.c, "test mode: the steady
-     * flicker of a 44 fps screen").  While the CPU is in a test loop the
-     * picture is presented at the panel's rate and a refresh no VGGO
-     * reached is blank.  [main] refresh_hz: 0 (default) = ask Windows for
-     * the current mode of the monitor the window is on; < 0 = off. */
-    {
-        float hz = get_config_float("main", "refresh_hz", 0.0f);
-        const char* from = "the ini";
-        set_config_float("main", "refresh_hz", hz);
-        if (hz == 0.0f) {
-            hz = monitor_refresh_hz(hWnd);
-            from = hz > 0.0f ? "the display" : "the 60 Hz fallback";
-            if (hz <= 0.0f) hz = 60.0f;
-        }
-        if (hz > 0.0f && (hz < 20.0f || hz > 500.0f)) {
-            hz = 60.0f;
-            from = "the 60 Hz fallback (refresh_hz out of range)";
-        }
-        if (hz > 0.0f)
-            LOG_INFO("test mode: presented at %.2f Hz from %s, a refresh with "
-                     "no VGGO is blank", hz, from);
-        else
-            LOG_INFO("test mode: presented on every VGGO (refresh_hz < 0)");
-        sd_app_set_refresh((double)hz);
-    }
-
     /* The AVG screen window for this board: x 0..520, y 0..395, y up
      * (AAE drv_spacduel AAE_DRIVER_SCREEN), squeezed into the 4:3
      * design rect. */
@@ -710,13 +641,13 @@ void plat_video_line(float x0, float y0, float x1, float y1, int color, int lum)
 /* Replay the phosphor history oldest-first, each frame's intensity
  * scaled by its own decay, then draw the batch additively (color mode:
  * overlapping beams sum, corner joins fill via GL_MAX - see
- * vector_draw.c).  `newest_full`: the newest frame is being presented
- * now, at full intensity; otherwise it decays by its age like the rest
- * (a dropped frame's blank). */
-static void ph_replay(int newest_full)
+ * vector_draw.c). */
+void plat_video_present(void)
 {
     double now = plat_now_ms();
     int i;
+
+    ph_buf[ph_cur].t = now;
 
     beam_clear();
     for (i = 0; i < PH_FRAMES; i++) {
@@ -726,7 +657,7 @@ static void ph_replay(int newest_full)
         int k;
 
         if (!f->used) continue;
-        if (f == &ph_buf[ph_cur] && newest_full) fac = 1.0;
+        if (f == &ph_buf[ph_cur]) fac = 1.0;
         else if (ph_tau <= 0.0)   continue;  /* phosphor off */
         else {
             fac = exp(-(now - f->t) / ph_tau);
@@ -739,25 +670,8 @@ static void ph_replay(int newest_full)
             beam_add_line(s->x0, s->y0, s->x1, s->y1, intens, avg_rgb[s->color]);
         }
     }
+
     beam_draw_all(beam_proj);
-}
-
-void plat_video_present(void)
-{
-    ph_buf[ph_cur].t = plat_now_ms();
-    ph_replay(1);
-    glSwap();
-}
-
-/* A dropped frame: the tube is dark, so NOTHING new is drawn.  With the
- * phosphor off (the default) that is a black frame; with it on, the
- * history keeps fading - the newest frame included, from the moment it
- * was presented - exactly as the tube would. */
-void plat_video_blank(void)
-{
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    if (ph_tau > 0.0) ph_replay(0);
     glSwap();
 }
 

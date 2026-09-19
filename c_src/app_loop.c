@@ -48,7 +48,6 @@
 
 #include "sd_state.h"
 #include "sd_hw.h"
-#include "selftest.h"  /* sd_cpu_loop(): is the CPU parked in a test loop */
 #include "avg.h"
 #include "samples.h"
 #include "platform/sd_platform.h"
@@ -508,149 +507,6 @@ void sd_app_set_fps_lock(double fps)
 
 static double clock_ms(void) { return fast_clock ? fast_ms : plat_now_ms(); }
 
-/* ---- dropped frames: the cabinet's missed frame ------------------------
- * A vector monitor is lit only while the AVG draws.  Through the attract
- * demo a mainline pass overruns the frame gate - 5 or 6 IRQ periods, 20
- * to 24 ms, on most passes - and the tube's afterglow carries the picture
- * across those gaps.  About seven times per attract sequence (measured:
- * 7 passes in 3600 headless frames, all in the demo's opening seconds,
- * and 6 in the oracle's 1500) a pass runs to SEVEN periods, 28 ms, and
- * that one is what the user sees on the real machine: a single black
- * frame.  A window that presents on every VGGO and then holds the frame
- * never shows it.
- *
- * The event is exact, not a time threshold: a pass on which the machine
- * spends >= dropped_irqs (7) IRQ periods between one VGGO and the next.
- * 5- and 6-IRQ passes (1476 and 516 of the 3600) can never fire it.  A
- * 60 Hz presenter that blanked every refresh no VGGO reached was tried on
- * 2026-09-13 and blanked 566 of them per attract - the demo really does
- * run at 41.7-50 fps, so the eye and the phosphor, not a raster tick,
- * decide what counts as a missed frame.
- *
- * Timing, the tube's own: the blank goes up when the AVG finishes drawing
- * this pass's list (vg_busy_until, ~17 ms in) and comes down at the next
- * VGGO (~28 ms), 11 ms of dark.  That needs the pass's length BEFORE it
- * is spent, and sd_hw_list_done() has it: the ticks are floor(owed + the
- * build's cost + the next pass's pre) plus whatever the gate adds (never
- * less), all known there - exact on every one of the 7 events, no false
- * positives (2026-09-13).  A fallback in the idle loop - six IRQs already
- * run since the VGGO and the machine waiting for a seventh - covers a
- * pass with no fit (it can only show ~4 ms of black, but it keeps the
- * count honest).  NOTHING is drawn on the blank: black with the phosphor
- * off (the default), the decaying afterglow with it on.  An optional
- * hold (dropped_frame_hold_ms) keeps the blank up past the next VGGO,
- * delaying that frame's present - 0 by default; a full-refresh hold was
- * the user's first live look and read as "a little too much black".
- * Only the host present moves; the machine clock, the IRQ schedule, the
- * $33 gate and the AVG busy window are untouched, and the probes (their
- * own seam) never see any of this.  One present per event, never two in
- * a refresh (the fault of the rolled-back 2026-09-03 attempt).  No
- * presents at all during a CPU restart. */
-static int    dropped_irqs = 7;      /* passes this long blank; 0 = never */
-static double hold_ms;               /* blank kept up past the next VGGO  */
-static unsigned irq_at_vggo;         /* g.irq_count at the last VGGO      */
-static double blank_at = -1.0;       /* clock_ms() to show this pass's
-                                      * blank (predicted); -1 = none      */
-static double blank_until = -1.0;    /* clock_ms() the hold ends          */
-static int    blank_shown;           /* this pass's blank is already up   */
-static int    frame_pending;         /* a capture waiting for the hold    */
-static int    booting;               /* inside sd_boot(): no presents     */
-static int    ref_events, ref_dropped;         /* per status second       */
-static long   ref_events_total;                /* since start (selftest)  */
-
-/* ---- test mode: the steady flicker of a 44 fps screen -------------------
- * The bookkeeping screen's list takes 22.65 ms to draw and the ROM waits
- * on HALT, so it runs at exactly 44.15 fps (the user's "44" from the
- * cabinet) with the beam busy the whole period - no dark gap, so the
- * dropped-frame event above can never fire, and a window holding each
- * frame shows a rock-steady picture where the tube shows a rock-steady
- * flicker: every spot is re-lit once per 22.65 ms and fades in between.
- * The attract demo's 6-IRQ stretches re-light each spot every 24 ms, the
- * same thing physically, yet the eye passes them: large bright static
- * text shows flicker, dim moving objects hide it, and (the user's own
- * rule) a short dip to 41 fps is hard to see where a long stretch is
- * not.  No single physical rule separates the two, so this is keyed on
- * what the ROM is doing: while the CPU is parked in a test loop
- * (sd_cpu_loop() != SD_LOOP_START2) the picture is presented the way a
- * raster display or AAE shows a vector game - at the panel's refresh
- * rate ([main] refresh_hz, the display's own by default), each tick
- * showing the newest VGGO if one arrived since the previous tick and
- * NOTHING (plat_video_blank) otherwise: ~16 blanks/s at 44 fps in a
- * near-steady pattern.  Frankly an approximation ("I hate to fake it"),
- * kept out of the game and attract, where it would blank ~20 times a
- * second through the demo. */
-static double refresh_ms;            /* panel period; 0 = no raster mode  */
-static double next_refresh = -1.0;   /* clock_ms() of the next tick       */
-static int    frame_fresh;           /* a VGGO captured since the tick    */
-static int    ref_blanks;            /* per status second                 */
-static long   ref_blanks_total;      /* since start (selftest)            */
-
-void sd_app_set_refresh(double hz)
-{
-    refresh_ms   = (hz > 0.0) ? 1000.0 / hz : 0.0;
-    next_refresh = -1.0;
-}
-
-static int test_raster(void)
-{
-    return refresh_ms > 0.0 && sd_cpu_loop() != SD_LOOP_START2;
-}
-
-void sd_app_set_dropped_frame(int irqs, double hold)
-{
-    dropped_irqs = irqs > 0 ? irqs : 0;
-    hold_ms      = hold > 0.0 ? hold : 0.0;
-}
-
-static void show_blank(void)
-{
-    plat_video_blank();
-    blank_shown = 1;
-    blank_at    = -1.0;
-    blank_until = clock_ms() + hold_ms;   /* after a vsynced swap */
-}
-
-/* Called wherever the machine waits for time. */
-static void presenter_poll(void)
-{
-    double now;
-
-    if (booting) return;             /* a CPU restart draws nothing */
-    now = clock_ms();
-    if (test_raster()) {             /* test mode: the panel's own tick */
-        if (next_refresh < 0.0) next_refresh = now + refresh_ms;
-        if (now < next_refresh) return;
-        if (frame_fresh) {
-            plat_video_present();
-        } else {
-            plat_video_blank();
-            ref_blanks++;
-            ref_blanks_total++;
-        }
-        frame_fresh = 0;
-        next_refresh += refresh_ms;
-        now = clock_ms();            /* a vsynced swap may have blocked */
-        if (next_refresh < now) next_refresh = now + refresh_ms;
-        return;
-    }
-    next_refresh = -1.0;             /* the game: rearm for next time */
-    if (dropped_irqs > 0 && !blank_shown) {
-        if (blank_at >= 0.0 && now >= blank_at) {      /* the tube just
-                                                        * went dark      */
-            show_blank();
-            return;
-        }
-        if (g.irq_count - irq_at_vggo >= (unsigned)(dropped_irqs - 1)) {
-            show_blank();            /* fallback: the 7th tick is next */
-            return;
-        }
-    }
-    if (frame_pending && now >= blank_until) {
-        plat_video_present();
-        frame_pending = 0;
-    }
-}
-
 /* Absorb elapsed time and run every IRQ it bought.  Returns how many ran.
  * The stall clamp is Omega Race's: a debugger break, a dragged window or a
  * laptop resume must not dump a thousand IRQs into one frame. */
@@ -686,15 +542,7 @@ static int machine_pump(void)
  * needing to be involved in pacing. */
 static void machine_idle(double remain)
 {
-    presenter_poll();                 /* a refresh tick may be due */
     if (fast_clock) {
-        /* The synthetic clock jumps a whole wait at once; a refresh tick
-         * inside the jump must still be seen on time, or the test-mode
-         * presenter would find a fresh frame at every tick it sees. */
-        if (test_raster() && next_refresh >= 0.0) {
-            double to_tick = next_refresh - clock_ms();
-            if (to_tick > 0.0 && to_tick < remain) remain = to_tick;
-        }
         /* The bias matters: (t + d) - t can come back a few ULPs SHORT of
          * d, so an exact "advance by the shortfall" leaves the accumulator
          * forever a hair under one tick and the wait never ends (it did,
@@ -824,25 +672,8 @@ void sd_hw_list_done(void)
 {
     if (cur_fit) {
         double bytes = (double)(((((unsigned)EAC2 << 8) | VGLIST) & 0x03FFu)) - 2.0;
-        double post_cyc = cur_fit->base + cur_fit->per_byte * bytes - cur_fit->pre;
-
-        /* Will this pass be a dropped frame?  Nothing of it has been spent
-         * yet (the build is instant), and its length is floor(owed + this
-         * build + the next pass's pre) IRQ periods plus whatever the gate
-         * adds, never less - so >= dropped_irqs here is certain.  Exact on
-         * all 7 events of a 3600-frame attract, no false positives
-         * (2026-09-13).  The blank is scheduled for the moment the AVG
-         * finishes this frame's list: when the tube goes dark. */
-        if (dropped_irqs > 0 && !blank_shown) {
-            const cpu_fit *nf = fit_lookup(ATRACT, ATSTG);
-            double post = post_cyc > 0.0
-                          ? post_cyc / (SD_IRQ_CYCLES - cur_fit->handler) : 0.0;
-            double pre  = nf ? nf->pre / (SD_IRQ_CYCLES - nf->handler) : 0.0;
-            unsigned ticks = (g.irq_count - irq_at_vggo)
-                             + (unsigned)(cpu_owed + post + pre);
-            if (ticks >= (unsigned)dropped_irqs) blank_at = vg_busy_until;
-        }
-        cpu_charge_cycles(cur_fit, post_cyc);
+        cpu_charge_cycles(cur_fit, cur_fit->base + cur_fit->per_byte * bytes
+                                   - cur_fit->pre);
     }
     cpu_pass_armed = 1;         /* the next $401F wait opens a Start2 pass */
 }
@@ -969,30 +800,9 @@ void sd_hw_vggo(void)
     stat_segs = 0;
     plat_video_begin();
     avg_run(emit_seg, &stat_words);
-    now = clock_ms();
+    plat_video_present();
 
-    /* The pass that just ended: the truth about whether it was a dropped
-     * frame is its IRQ count (the blank itself went up from the idle loop
-     * when the last of those IRQs was still to come). */
-    if (dropped_irqs > 0 && g.irq_count - irq_at_vggo >= (unsigned)dropped_irqs) {
-        ref_events++;
-        ref_events_total++;
-    }
-    irq_at_vggo = g.irq_count;
-    blank_shown = 0;
-    blank_at    = -1.0;              /* a prediction never shown lapses */
-    if (frame_pending) ref_dropped++;   /* a held frame, never shown */
-    if (test_raster()) {
-        frame_fresh   = 1;           /* captured; the tick shows it */
-        frame_pending = 0;
-        presenter_poll();
-    } else if (now < blank_until) {
-        frame_pending = 1;           /* the blank has not had its hold */
-    } else {
-        plat_video_present();
-        frame_pending = 0;
-        frame_fresh   = 0;
-    }
+    now = clock_ms();
     stat_avg_ms   = avg_frame_time_ms();    /* authentic, for the stats */
     vg_busy_until = now + stat_avg_ms * mach_scale; /* HALT low this long
                                              * (the AVG shares the crystal,
@@ -1013,11 +823,10 @@ void sd_hw_vggo(void)
     fps_segs += stat_segs;
 
     if (now - fps_t0 >= 1000.0) {
-        char buf[256];
+        char buf[192];
         snprintf(buf, sizeof buf,
                  "%.1f fps  frame %.2f ms (min %.2f max %.2f)  "
                  "avg draw %.2f ms  %d segs  %d list bytes  "
-                 "%d dropped (%d held)  %d blank  "
                  "pokey q %u/%u underrun %u overrun %llu/%llu",
                  (double)fps_frames * 1000.0 / (now - fps_t0),
                  jit_n ? jit_sum / jit_n : 0.0,
@@ -1026,7 +835,6 @@ void sd_hw_vggo(void)
                  stat_avg_ms,
                  fps_frames ? fps_segs / fps_frames : 0,
                  stat_words * 2,
-                 ref_events, ref_dropped, ref_blanks,
                  ad_pokey_audio_available(&pokey[0]),
                  ad_pokey_audio_available(&pokey[1]),
                  audio_underrun_frames,
@@ -1035,7 +843,6 @@ void sd_hw_vggo(void)
         plat_status_text(buf);
         jit_sum = 0.0; jit_n = 0;
         fps_frames = 0; fps_segs = 0;
-        ref_events = 0; ref_dropped = 0; ref_blanks = 0;
         fps_t0 = now;
     }
 }
@@ -1059,9 +866,7 @@ static void boot_fast(void)
     if (!was_fast) fast_ms = 0.0;    /* a fresh synthetic clock       */
     last_ms    = -1.0;
     irq_acc    = 0.0;
-    booting    = 1;
     sd_boot();
-    booting    = 0;
 
     if (!selftest_mode) {
         /* Start live output at a fresh sample boundary, retaining oscillators. */
@@ -1074,9 +879,6 @@ static void boot_fast(void)
         irq_acc    = 0.0;
     }
     vg_busy_until = clock_ms();      /* nothing has been drawn yet */
-    irq_at_vggo   = g.irq_count;     /* the first pass starts here, not
-                                      * 388 boot IRQs ago */
-    blank_shown = 0; frame_pending = 0; blank_until = -1.0; blank_at = -1.0;
 }
 
 /* WatchDogResetExit $8618 (self-test switch turned off in the diagnostics)
@@ -1151,8 +953,6 @@ static long   st_seg_sum;
 static int    st_frames;
 static double st_ms_min, st_ms_max, st_ms_sum;
 static int    st_ms_n;
-static long   st_events0, st_blanks0;  /* dropped-frame / test-mode blank
-                                        * totals at reset */
 
 /* Ship 0's four torpedo slots: FireShipsTorpedos_20 searches object status
  * slots $2B down to $28 (g.ram[$C2]..g.ram[$BF]) - the start/stop indices
@@ -1171,7 +971,6 @@ static void st_reset_stats(void)
 {
     st_seg_min = 1 << 30; st_seg_max = 0; st_seg_sum = 0; st_frames = 0;
     st_ms_min = 1e30; st_ms_max = 0.0; st_ms_sum = 0.0; st_ms_n = 0;
-    st_events0 = ref_events_total; st_blanks0 = ref_blanks_total;
 }
 
 /* --trace: one line per displayed frame - frame number (the oracle's
@@ -1186,9 +985,9 @@ static void st_run(int n)
     for (i = 0; i < n; i++) {
         sd_app_step(plat_now_ms());
         if (st_trace)
-            printf("TRACE frame %u words %d segs %d avg %.2f ms period %.2f ms irqs %u dropped %ld\n",
+            printf("TRACE frame %u words %d segs %d avg %.2f ms period %.2f ms irqs %u\n",
                    g.frame_count, stat_words, stat_segs, stat_avg_ms,
-                   stat_frame_ms, g.irq_count, ref_events_total);
+                   stat_frame_ms, g.irq_count);
         if (st_torps_active() > st_torp_peak) st_torp_peak = st_torps_active();
         st_frames++;
         st_seg_sum += stat_segs;
@@ -1218,13 +1017,12 @@ static int st_wait_live_ship(void)
 static void st_report(const char* what)
 {
     printf("  %-22s %4d frames  segs %d..%d avg %ld   frame %.2f..%.2f ms "
-           "avg %.2f (%.1f fps)   dropped frames %ld   test-mode blanks %ld\n",
+           "avg %.2f (%.1f fps)\n",
            what, st_frames, st_seg_min, st_seg_max,
            st_frames ? st_seg_sum / st_frames : 0,
            st_ms_n ? st_ms_min : 0.0, st_ms_n ? st_ms_max : 0.0,
            st_ms_n ? st_ms_sum / st_ms_n : 0.0,
-           st_ms_n && st_ms_sum > 0.0 ? 1000.0 * st_ms_n / st_ms_sum : 0.0,
-           ref_events_total - st_events0, ref_blanks_total - st_blanks0);
+           st_ms_n && st_ms_sum > 0.0 ? 1000.0 * st_ms_n / st_ms_sum : 0.0);
 }
 
 /* sd_c.nv <-> the headless in-memory NVRAM, so two consecutive runs of this
@@ -1264,8 +1062,6 @@ int main(int argc, char** argv)
     setvbuf(stdout, NULL, _IONBF, 0);        /* progress must survive a hang */
     setvbuf(stderr, NULL, _IONBF, 0);
     selftest_mode = 1;                       /* synthetic clock throughout */
-    sd_app_set_dropped_frame(7, 0.0);        /* the game build's defaults */
-    sd_app_set_refresh(60.0);                /* a 60 Hz panel for test mode */
     st_nv_load();
     if (plat_init()) return 2;
 
@@ -1281,42 +1077,14 @@ int main(int argc, char** argv)
            "%02X %02X %02X %02X (05 = the reseeded 500)\n",
            g.ram[0xDE], g.ram[0xED], g.ram[0xFC], g.ram[0x10B]);
 
-    /* ---- attract -------------------------------------------------
-     * The first ~500 frames are the title / high-score screens: 4-IRQ
-     * passes, never a dropped frame.  The demo game that follows
-     * overruns the gate, and its opening seconds hold the 7-IRQ passes
-     * that ARE the cabinet's dropped frames: 7 of them in 3600 frames
-     * (2026-09-13), so a 3600-frame run must count a handful, not none
-     * and not dozens. */
-    {
-        long light, total;
-        int  head = frames < 500 ? frames : 500;
-        st_reset_stats();
-        st_run(head);
-        light = ref_events_total - st_events0;
-        if (frames > head) st_run(frames - head);
-        st_report("attract");
-        total = ref_events_total - st_events0;
-        if (st_seg_max == st_seg_min) {
-            printf("  FAIL: attract is a still picture (segment count never "
-                   "changed)\n");
-            fails++;
-        }
-        if (light != 0) {
-            printf("  FAIL: %ld dropped frames on the light attract screens "
-                   "(4-IRQ passes cannot reach 7 IRQs)\n", light);
-            fails++;
-        }
-        if (frames >= 3600 && (total < 3 || total > 20)) {
-            printf("  FAIL: %ld dropped frames in the attract; the ROM's own "
-                   "overruns give about 7 per 3600 frames\n", total);
-            fails++;
-        }
-        if (ref_blanks_total - st_blanks0 != 0) {
-            printf("  FAIL: test-mode blanks in the attract (the raster "
-                   "presenter is for the test loops only)\n");
-            fails++;
-        }
+    /* ---- attract ------------------------------------------------- */
+    st_reset_stats();
+    st_run(frames);
+    st_report("attract");
+    if (st_seg_max == st_seg_min) {
+        printf("  FAIL: attract is a still picture (segment count never "
+               "changed)\n");
+        fails++;
     }
 
     /* ---- insert a coin ------------------------------------------- */
@@ -1513,13 +1281,6 @@ int main(int argc, char** argv)
         st_reset_stats(); st_run(30);
         loop = sd_cpu_loop();
         st_report("bookkeeping (F2)");
-        /* 44.15 fps against a 60 Hz panel: about one refresh in four has
-         * no new frame and is blank - the cabinet's steady flicker. */
-        if (ref_blanks_total - st_blanks0 == 0) {
-            printf("  FAIL: the bookkeeping screen never blanked a refresh "
-                   "(44 fps must flicker on a 60 Hz panel)\n");
-            fails++;
-        }
         printf("  CPU loop %d (1 = St2 bookkeeping)  game flag $35 = $%02X  "
                "option $1A&3 = %u\n", loop, ZP_35, ZP_1A & 3);
         if (loop != 1 || st_seg_max == 0) {
@@ -1601,18 +1362,6 @@ int main(int argc, char** argv)
             printf("  FAIL: the EAROM did not survive a restart\n");
             fails++;
         }
-    }
-
-    /* The idle loop's blank (shown while a dropped frame's last IRQ is
-     * still to come) and the VGGO's count of the pass (the truth) must
-     * agree one-for-one: every event blanked once, nothing else ever. */
-    printf("  dropped frames: %ld passes of %d+ IRQs, %ld test-mode blanks, "
-           "%d blank presents in all\n",
-           ref_events_total, dropped_irqs, ref_blanks_total, hl_blanks);
-    if ((long)hl_blanks != ref_events_total + ref_blanks_total) {
-        printf("  FAIL: blank presents != dropped-frame passes + test-mode "
-               "blanks\n");
-        fails++;
     }
 
     plat_shutdown();
